@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07384a"><title>Calculadora de contraste | ClariACE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="header"><div class="header-inner"><img src="logos-clariace/ClariACE_cor.png" alt="ClariACE" class="logo"><span class="header-label">FERRAMENTA CLÍNICA</span></div></header>
+  <main class="container">
+    <div class="intro"><div><span class="eyebrow"><span class="dot"></span> APOIO AO EXAME</span><h1>Calculadora de contraste</h1><p>Encontre o volume de contraste conforme os parâmetros do exame e as tabelas ClariACE.</p></div><div class="intro-mark" aria-hidden="true">✳</div></div>
+    <div class="workspace">
+      <section class="card form-card" aria-labelledby="form-title"><div class="card-heading"><div><span class="section-kicker">01 / PARÂMETROS</span><h2 id="form-title">Dados do exame</h2><p>Preencha as informações para consultar a tabela.</p></div><span class="heading-icon" aria-hidden="true">＋</span></div>
+        <form id="calculator" novalidate>
+          <div class="field"><label for="concentration">Concentração do contraste</label><div class="select-wrap"><select id="concentration" required><option value="">Selecione a concentração</option><option value="300">300</option><option value="350">350</option><option value="370">370</option></select></div></div>
+          <div class="field-row"><div class="field"><label for="channels">Canais do tomógrafo</label><div class="select-wrap"><select id="channels" required><option value="">Selecione</option><option>8</option><option>16</option><option>32</option><option>64</option><option>80</option><option>128</option><option>160</option></select></div></div><div class="field"><label for="injector">Uso de injetora</label><div class="select-wrap"><select id="injector" required><option value="">Selecione</option><option value="com">Com injetora</option><option value="sem">Sem injetora</option></select></div></div></div>
+          <div class="field"><label for="exam">Tipo de exame</label><div class="select-wrap"><select id="exam" required><option value="">Selecione os parâmetros anteriores</option></select></div></div>
+          <div class="field"><label for="weight">Peso do paciente</label><div class="input-wrap"><input id="weight" name="weight" type="text" inputmode="decimal" placeholder="Ex.: 70,5" required autocomplete="off" aria-describedby="weight-hint"><span>kg</span></div><p class="hint" id="weight-hint">Informe o peso em quilogramas.</p></div>
+          <p id="form-error" class="error" role="alert"></p><button class="primary" type="submit">Calcular volume <span aria-hidden="true">→</span></button><button class="reset" type="reset">Limpar dados</button>
+        </form>
+      </section>
+      <section class="result-panel" aria-labelledby="result-title"><div class="result-top"><div><span class="section-kicker">02 / RESULTADO</span><h2 id="result-title">Volume de contraste</h2></div><span class="result-icon" aria-hidden="true">✳</span></div><div id="result" role="status" aria-live="polite"><div class="empty"><div class="empty-icon" aria-hidden="true">◌</div><h3>Seu resultado aparecerá aqui</h3><p>Preencha os dados do exame e selecione “Calcular volume”.</p></div></div><div class="result-footer"><span aria-hidden="true">ⓘ</span><p>Confira os parâmetros e valide o resultado com o protocolo e o profissional responsável antes da administração.</p></div></section>
+    </div>
+    <div class="source-note"><span aria-hidden="true">✳</span><p>Baseado nas tabelas de recomendações ClariACE fornecidas. Os dados são processados neste dispositivo e não são armazenados.</p></div>
+  </main><footer><div class="footer-inner"><span>ClariACE <b> / </b> Calculadora de contraste</span><span>Apoio à prática clínica</span></div></footer>
+  <script src="data.js"></script><script src="app.js"></script>
+</body></html>
