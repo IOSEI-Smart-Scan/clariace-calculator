@@ -17,12 +17,14 @@
           <div class="field"><label for="exam">Tipo de exame</label><div class="select-wrap"><select id="exam" required><option value="">Selecione os parâmetros anteriores</option></select></div></div>
           <div class="field"><label for="weight">Peso do paciente</label><div class="input-wrap"><input id="weight" name="weight" type="text" inputmode="decimal" placeholder="Ex.: 70,5" required autocomplete="off" aria-describedby="weight-hint"><span>kg</span></div><p class="hint" id="weight-hint">Informe o peso em quilogramas.</p></div>
           <p id="form-error" class="error" role="alert"></p><button class="primary" type="submit">Calcular volume <span aria-hidden="true">→</span></button><button class="reset" type="reset">Limpar dados</button>
+          <div class="preferences"><p>Concentração, canais, injetora e exame ficam salvos neste navegador. O peso do paciente não é salvo.</p><button id="clear-preferences" class="clear-preferences" type="button">Apagar preferências salvas</button><p id="preferences-status" class="preferences-status" role="status" aria-live="polite"></p></div>
         </form>
       </section>
       <section class="result-panel" aria-labelledby="result-title"><div class="result-top"><div><span class="section-kicker">02 / RESULTADO</span><h2 id="result-title">Volume de contraste</h2></div><span class="result-icon" aria-hidden="true">✳</span></div><div id="result" role="status" aria-live="polite"><div class="empty"><div class="empty-icon" aria-hidden="true">◌</div><h3>Seu resultado aparecerá aqui</h3><p>Preencha os dados do exame e selecione “Calcular volume”.</p></div></div><div class="result-footer"><span aria-hidden="true">ⓘ</span><p>Confira os parâmetros e valide o resultado com o protocolo e o profissional responsável antes da administração.</p></div></section>
     </div>
-    <div class="source-note"><span aria-hidden="true">✳</span><p>Baseado nas tabelas de recomendações ClariACE fornecidas. Os dados são processados neste dispositivo e não são armazenados.</p></div>
+    <div class="source-note"><span aria-hidden="true">✳</span><p>Baseado nas tabelas de recomendações ClariACE fornecidas. As preferências ficam salvas somente neste navegador; o peso do paciente não é armazenado.</p></div>
   </main><footer><div class="footer-inner"><span>ClariACE <b> / </b> Calculadora de contraste</span><span>Apoio à prática clínica</span></div></footer>
   <script src="data.js"></script><script src="app.js"></script>
 </body></html>
+
 

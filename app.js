@@ -6,11 +6,40 @@ const exam = document.querySelector('#exam');
 const weight = document.querySelector('#weight');
 const result = document.querySelector('#result');
 const error = document.querySelector('#form-error');
+const preferencesStatus = document.querySelector('#preferences-status');
+const clearPreferencesButton = document.querySelector('#clear-preferences');
 const empty = result.innerHTML;
+const PREFERENCES_KEY = 'clariace-calculator.preferences.v1';
 const cleanName = name => name.replace(/\s+ATÉ 80 KG|\s+ACIMA DE 81 KG/gi, '').trim();
 const displayName = name => ({'CRANIO':'Crânio','PESCOÇO':'Pescoço','TORAX':'Tórax','ABDOME':'Abdome','PELVE':'Pelve','MUSCULOS':'Músculos','ANGIO CRANIO':'Angio crânio','ANGIO CARÓTIDAS':'Angio carótidas','ANGIO CRANIO/CARÓTIDAS':'Angio crânio/carótidas','ANGIO TEP':'Angio TEP','ANGIO AORTA':'Angio aorta','ANGIO ABDOME':'Angio abdome','ANGIO MEMBROS INFERIORES':'Angio membros inferiores','ANGIO DE CORONÁRIAS':'Angio de coronárias'}[name] || name);
 const fmt = n => new Intl.NumberFormat('pt-BR', {maximumFractionDigits: 3}).format(n);
 function table() { return TABLES[concentration.value]?.[`${channels.value}-${injector.value}`]; }
+function optionExists(select, value) {
+  return typeof value === 'string' && [...select.options].some(option => option.value === value);
+}
+function savePreferences() {
+  const preferences = {
+    concentration: concentration.value,
+    channels: channels.value,
+    injector: injector.value,
+    exam: exam.value
+  };
+  try {
+    if (Object.values(preferences).some(Boolean)) localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+    else localStorage.removeItem(PREFERENCES_KEY);
+    preferencesStatus.textContent = 'Preferências salvas neste navegador.';
+  } catch {
+    preferencesStatus.textContent = 'Não foi possível salvar as preferências neste navegador.';
+  }
+}
+function clearSavedPreferences(message) {
+  try {
+    localStorage.removeItem(PREFERENCES_KEY);
+    preferencesStatus.textContent = message;
+  } catch {
+    preferencesStatus.textContent = 'Não foi possível apagar as preferências salvas neste navegador.';
+  }
+}
 function updateExams() {
   const previous = exam.value; const t = table();
   exam.replaceChildren(new Option(t ? 'Selecione o exame' : 'Selecione os parâmetros anteriores', ''));
@@ -18,9 +47,28 @@ function updateExams() {
   if ([...exam.options].some(o => o.value === previous)) exam.value = previous;
   result.innerHTML = empty; error.textContent = '';
 }
-[concentration,channels,injector].forEach(el => el.addEventListener('change', updateExams));
+[concentration,channels,injector].forEach(el => el.addEventListener('change', () => { updateExams(); savePreferences(); }));
 [exam,weight].forEach(el => el.addEventListener('input', () => { result.innerHTML = empty; error.textContent = ''; }));
-form.addEventListener('reset', () => { setTimeout(() => { updateExams(); result.innerHTML = empty; }, 0); });
+exam.addEventListener('change', savePreferences);
+clearPreferencesButton.addEventListener('click', () => clearSavedPreferences('Preferências apagadas. As escolhas atuais continuam nesta página.'));
+form.addEventListener('reset', () => { setTimeout(() => { updateExams(); result.innerHTML = empty; clearSavedPreferences('Campos limpos e preferências apagadas deste navegador.'); }, 0); });
+function restorePreferences() {
+  let preferences = {};
+  try {
+    const stored = localStorage.getItem(PREFERENCES_KEY);
+    const parsed = stored ? JSON.parse(stored) : null;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) preferences = parsed;
+  } catch {
+    preferencesStatus.textContent = 'Não foi possível ler as preferências salvas neste navegador.';
+  }
+  concentration.value = optionExists(concentration, preferences.concentration) ? preferences.concentration : '';
+  channels.value = optionExists(channels, preferences.channels) ? preferences.channels : '';
+  injector.value = optionExists(injector, preferences.injector) ? preferences.injector : '';
+  updateExams();
+  exam.value = optionExists(exam, preferences.exam) ? preferences.exam : '';
+  weight.value = '';
+}
+restorePreferences();
 form.addEventListener('submit', event => {
   event.preventDefault(); error.textContent = ''; result.innerHTML = empty;
   for (const el of [concentration, channels, injector]) if (!el.value) { error.textContent = 'Selecione todos os parâmetros do exame.'; el.focus(); return; }
@@ -41,3 +89,4 @@ form.addEventListener('submit', event => {
   const notes = [general, coronary].filter(Boolean).map(n => `<p>${n}</p>`).join('');
   result.innerHTML = `<div class="answer"><p class="answer-label">VOLUME DA TABELA</p><div class="volume">${fmt(volume)} <span>mL</span></div><p class="calculation">${factor ? `${fmt(kg)} kg × ${fmt(amount)} mL/kg` : `Volume fixo: ${entry.value}`}</p><div class="summary"><div><span>Exame</span><strong>${displayName(exam.value)}</strong></div><div><span>Contraste</span><strong>${concentration.value}</strong></div><div><span>Tomógrafo</span><strong>${channels.value} canais · ${injector.value} injetora</strong></div>${entry.flow ? `<div><span>Fluxo do exame</span><strong>${entry.flow.toLowerCase().replace('ml/seg','mL/seg')}</strong></div>` : ''}</div>${injector.value === 'com' ? '<div class="jelco"><strong>Jelco · fluxo máximo na tabela</strong><div class="jelco-list"><span>22: até 2,8 mL/seg</span><span>20: até 4,5 mL/seg</span><span>18: até 6,0 mL/seg</span></div><p>Referência de fluxo por calibre; confirme o acesso e o protocolo antes do exame.</p></div>' : ''}<p class="source">Fonte: concentração ${concentration.value} · ${t.sheet} · célula ${entry.cell}${injector.value === 'com' ? ' · Jelco: I5:J7' : ''}</p>${notes ? `<div class="notes"><strong>Observações da tabela</strong>${notes}<p>Confira a aplicação desses limites antes de usar o resultado.</p></div>` : ''}${injector.value === 'com' ? '<p class="height-note">A tabela registra altura de 1,80 m; confirme sua aplicação ao caso.</p>' : ''}</div>`;
 });
+
