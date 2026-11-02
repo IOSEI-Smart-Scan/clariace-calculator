@@ -1,30 +1,197 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#07384a"><title>Calculadora de contraste | ClariACE</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07384a">
+  <meta name="description" content="Calculadora ClariACE de volume de contraste, com registro seguro de uso por instituição e operador.">
+  <title>Calculadora de contraste | ClariACE</title>
+  <link rel="stylesheet" href="style.css?v=20261102-2">
 </head>
 <body>
-  <header class="header"><div class="header-inner"><img src="assets/clariace-logo.png" alt="ClariACE" class="logo"><span class="header-label">FERRAMENTA CLÍNICA</span></div></header>
-  <main class="container">
-    <div class="intro"><div><span class="eyebrow"><span class="dot"></span> APOIO AO EXAME</span><h1>Calculadora de contraste</h1><p>Encontre o volume de contraste conforme os parâmetros do exame e as tabelas ClariACE.</p></div><div class="intro-mark" aria-hidden="true">✳</div></div>
-    <div class="workspace">
-      <section class="card form-card" aria-labelledby="form-title"><div class="card-heading"><div><span class="section-kicker">01 / PARÂMETROS</span><h2 id="form-title">Dados do exame</h2><p>Preencha as informações para consultar a tabela.</p></div><span class="heading-icon" aria-hidden="true">＋</span></div>
-        <form id="calculator" novalidate>
-          <div class="field"><label for="concentration">Concentração do contraste</label><div class="select-wrap"><select id="concentration" required><option value="">Selecione a concentração</option><option value="300">300</option><option value="350">350</option><option value="370">370</option></select></div></div>
-          <div class="field-row"><div class="field"><label for="channels">Canais do tomógrafo</label><div class="select-wrap"><select id="channels" required><option value="">Selecione</option><option>8</option><option>16</option><option>32</option><option>64</option><option>80</option><option>128</option><option>160</option></select></div></div><div class="field"><label for="injector">Uso de injetora</label><div class="select-wrap"><select id="injector" required><option value="">Selecione</option><option value="com">Com injetora</option><option value="sem">Sem injetora</option></select></div></div></div>
-          <div class="field"><label for="exam">Tipo de exame</label><div class="select-wrap"><select id="exam" required><option value="">Selecione os parâmetros anteriores</option></select></div></div>
-          <div class="field"><label for="weight">Peso do paciente</label><div class="input-wrap"><input id="weight" name="weight" type="text" inputmode="decimal" placeholder="Ex.: 70,5" required autocomplete="off" aria-describedby="weight-hint"><span>kg</span></div><p class="hint" id="weight-hint">Informe o peso em quilogramas.</p></div>
-          <p id="form-error" class="error" role="alert"></p><button class="primary" type="submit">Calcular volume <span aria-hidden="true">→</span></button><button class="reset" type="reset">Limpar dados</button>
-          <div class="preferences"><p>Concentração, canais, injetora e exame ficam salvos neste navegador. O peso do paciente não é salvo.</p><button id="clear-preferences" class="clear-preferences" type="button">Apagar preferências salvas</button><p id="preferences-status" class="preferences-status" role="status" aria-live="polite"></p></div>
-        </form>
-      </section>
-      <section class="result-panel" aria-labelledby="result-title"><div class="result-top"><div><span class="section-kicker">02 / RESULTADO</span><h2 id="result-title">Volume de contraste</h2></div><span class="result-icon" aria-hidden="true">✳</span></div><div id="result" role="status" aria-live="polite"><div class="empty"><div class="empty-icon" aria-hidden="true">◌</div><h3>Seu resultado aparecerá aqui</h3><p>Preencha os dados do exame e selecione “Calcular volume”.</p></div></div><div class="result-footer"><span aria-hidden="true">ⓘ</span><p>Confira os parâmetros e valide o resultado com o protocolo e o profissional responsável antes da administração.</p></div></section>
+  <header class="header">
+    <div class="header-inner">
+      <img src="assets/clariace-logo.png" alt="ClariACE" class="logo">
+      <div class="header-actions">
+        <span class="header-label">FERRAMENTA CLÍNICA</span>
+        <span id="session-name" class="session-name" hidden></span>
+        <button id="sign-out" class="secondary-button" type="button" hidden>Sair</button>
+      </div>
     </div>
-    <div class="source-note"><span aria-hidden="true">✳</span><p>Baseado nas tabelas de recomendações ClariACE fornecidas. As preferências ficam salvas somente neste navegador; o peso do paciente não é armazenado.</p></div>
-  </main><footer><div class="footer-inner"><span>ClariACE <b> / </b> Calculadora de contraste</span><span>Apoio à prática clínica</span></div></footer>
-  <script src="data.js"></script><script src="app.js"></script>
-</body></html>
+  </header>
 
+  <main class="container">
+    <div class="intro">
+      <div>
+        <span class="eyebrow"><span class="dot"></span> APOIO AO EXAME</span>
+        <h1>Calculadora de contraste</h1>
+        <p>Consulte o volume conforme os parâmetros do exame e as tabelas ClariACE.</p>
+      </div>
+      <div class="intro-mark" aria-hidden="true">✳</div>
+    </div>
+
+    <section id="auth-screen" class="auth-card card" aria-labelledby="auth-title">
+      <span class="section-kicker">ACESSO À PLATAFORMA</span>
+      <h2 id="auth-title">Entre na sua conta</h2>
+      <p class="muted">Os cálculos e os relatórios são restritos a usuários autorizados.</p>
+      <div class="auth-tabs" role="tablist" aria-label="Acesso à plataforma">
+        <button class="auth-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="login-panel" data-auth-view="login">Entrar</button>
+        <button class="auth-tab" type="button" role="tab" aria-selected="false" aria-controls="signup-panel" data-auth-view="signup">Solicitar acesso</button>
+      </div>
+      <div id="login-panel" class="auth-panel" role="tabpanel">
+        <form id="login-form" novalidate>
+          <div class="field"><label for="login-email">E-mail</label><input id="login-email" type="email" autocomplete="username" required></div>
+          <div class="field"><label for="login-password">Senha</label><input id="login-password" type="password" autocomplete="current-password" required><button id="forgot-password" class="text-button" type="button">Recuperar senha</button></div>
+          <button class="primary" type="submit">Entrar <span aria-hidden="true">→</span></button>
+        </form>
+      </div>
+      <div id="signup-panel" class="auth-panel" role="tabpanel" hidden>
+        <form id="signup-form" novalidate>
+          <div class="field"><label for="signup-name">Nome do operador</label><input id="signup-name" maxlength="100" autocomplete="name" required></div>
+          <div class="field"><label for="signup-institution">Clínica ou hospital</label><input id="signup-institution" maxlength="120" autocomplete="organization" required><p class="hint">A equipe ClariACE vinculará sua conta à instituição cadastrada.</p></div>
+          <div class="field"><label for="signup-email">E-mail</label><input id="signup-email" type="email" autocomplete="email" required></div>
+          <div class="field"><label for="signup-password">Senha</label><input id="signup-password" type="password" minlength="12" autocomplete="new-password" aria-describedby="password-hint" required><p class="hint" id="password-hint">Use pelo menos 12 caracteres.</p></div>
+          <button class="primary" type="submit">Enviar solicitação <span aria-hidden="true">→</span></button>
+          <p class="hint">Este cadastro é para operadores de clínicas e hospitais. O acesso de administrador global da plataforma é concedido separadamente pela equipe ClariACE.</p>
+        </form>
+      </div>
+      <p id="auth-status" class="status-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="pending-screen" class="pending-card card" aria-labelledby="pending-title" hidden>
+      <div class="pending-icon" aria-hidden="true">⌛</div>
+      <span class="section-kicker">ACESSO EM ANÁLISE</span>
+      <h2 id="pending-title">Sua conta aguarda aprovação</h2>
+      <p class="muted">Um administrador global da plataforma ClariACE precisa vincular seu usuário a uma instituição antes de liberar a calculadora.</p>
+      <p id="pending-details" class="pending-details"></p>
+    </section>
+
+    <section id="password-recovery-screen" class="auth-card card" aria-labelledby="password-recovery-title" hidden>
+      <span class="section-kicker">RECUPERAÇÃO DE ACESSO</span>
+      <h2 id="password-recovery-title">Defina uma nova senha</h2>
+      <p class="muted">Escolha uma senha com pelo menos 12 caracteres.</p>
+      <form id="password-recovery-form" novalidate>
+        <div class="field"><label for="recovery-password">Nova senha</label><input id="recovery-password" type="password" minlength="12" autocomplete="new-password" required></div>
+        <div class="field"><label for="recovery-password-confirm">Confirme a nova senha</label><input id="recovery-password-confirm" type="password" minlength="12" autocomplete="new-password" required></div>
+        <p id="password-recovery-status" class="status-message" role="status" aria-live="polite"></p>
+        <button id="save-recovery-password" class="primary" type="submit">Salvar nova senha <span aria-hidden="true">→</span></button>
+      </form>
+      <div id="password-recovery-complete" hidden>
+        <p class="status-message is-success" role="status">Senha atualizada. Você já pode continuar no ClariACE.</p>
+        <button id="continue-after-recovery" class="primary" type="button">Continuar <span aria-hidden="true">→</span></button>
+      </div>
+    </section>
+
+    <div id="app-screen" hidden>
+      <nav id="app-tabs" class="app-tabs" aria-label="Seções da plataforma" hidden>
+        <button id="show-calculator" class="app-tab is-active" type="button">Calculadora</button>
+        <button id="show-dashboard" class="app-tab" type="button">Painel de gestão</button>
+      </nav>
+
+      <section id="calculator-screen">
+        <div class="workspace">
+          <section class="card form-card" aria-labelledby="form-title">
+            <div class="card-heading">
+              <div><span class="section-kicker">01 / PARÂMETROS</span><h2 id="form-title">Dados do exame</h2><p>Preencha as informações para consultar a tabela.</p></div>
+              <span class="heading-icon" aria-hidden="true">＋</span>
+            </div>
+            <form id="calculator" novalidate>
+              <div class="field"><label for="patient-id">ID do paciente</label><input id="patient-id" name="patient-id" type="text" maxlength="80" autocomplete="off" required aria-describedby="patient-id-hint"><p class="hint" id="patient-id-hint">O ID fica vinculado ao cálculo por 60 dias. Não informe nome, CPF ou prontuário.</p></div>
+              <div class="field"><label for="concentration">Concentração do contraste</label><div class="select-wrap"><select id="concentration" required><option value="">Selecione a concentração</option><option value="300">300</option><option value="350">350</option><option value="370">370</option></select></div></div>
+              <div class="field-row">
+                <div class="field"><label for="channels">Canais do tomógrafo</label><div class="select-wrap"><select id="channels" required><option value="">Selecione</option><option>8</option><option>16</option><option>32</option><option>64</option><option>80</option><option>128</option><option>160</option></select></div></div>
+                <div class="field"><label for="injector">Uso de injetora</label><div class="select-wrap"><select id="injector" required><option value="">Selecione</option><option value="com">Com injetora</option><option value="sem">Sem injetora</option></select></div></div>
+              </div>
+              <div class="field"><label for="exam">Tipo de exame</label><div class="select-wrap"><select id="exam" required><option value="">Selecione os parâmetros anteriores</option></select></div></div>
+              <div class="field"><label for="weight">Peso do paciente</label><div class="input-wrap"><input id="weight" name="weight" type="text" inputmode="decimal" placeholder="Ex.: 70,5" required autocomplete="off" aria-describedby="weight-hint"><span>kg</span></div><p class="hint" id="weight-hint">Informe o peso em quilogramas.</p></div>
+              <p id="form-error" class="error" role="alert"></p>
+              <button id="calculate-button" class="primary" type="submit">Calcular volume <span aria-hidden="true">→</span></button>
+              <button class="reset" type="reset">Limpar dados</button>
+              <div class="preferences"><p>Concentração, canais, injetora e exame ficam salvos neste navegador. Peso e ID do paciente não são salvos localmente.</p><button id="clear-preferences" class="clear-preferences" type="button">Apagar preferências salvas</button><p id="preferences-status" class="preferences-status" role="status" aria-live="polite"></p></div>
+            </form>
+          </section>
+
+          <section class="result-panel" aria-labelledby="result-title">
+            <div class="result-top"><div><span class="section-kicker">02 / RESULTADO</span><h2 id="result-title">Volume de contraste</h2></div><span class="result-icon" aria-hidden="true">✳</span></div>
+            <div id="result" role="status" aria-live="polite"><div class="empty"><div class="empty-icon" aria-hidden="true">◌</div><h3>Seu resultado aparecerá aqui</h3><p>Preencha os dados do exame e selecione “Calcular volume”.</p></div></div>
+            <div class="result-footer"><span aria-hidden="true">ⓘ</span><p>Confira os parâmetros e valide o resultado com o protocolo e o profissional responsável antes da administração.</p></div>
+          </section>
+        </div>
+        <section class="history-card card" aria-labelledby="personal-history-title">
+          <div class="card-heading"><div><span class="section-kicker">REGISTROS RECENTES</span><h2 id="personal-history-title">Meus últimos cálculos</h2><p>O histórico detalhado fica disponível por 60 dias.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Data e hora</th><th>ID do paciente</th><th>Exame</th><th>Volume calculado</th><th>Situação</th></tr></thead><tbody id="personal-history-body"><tr><td colspan="5" class="table-empty">Os cálculos recentes aparecerão aqui.</td></tr></tbody></table></div>
+        </section>
+      </section>
+
+      <section id="dashboard-screen" hidden aria-labelledby="dashboard-title">
+        <div class="dashboard-heading"><div><span class="section-kicker">GESTÃO / RELATÓRIOS</span><h2 id="dashboard-title">Painel de uso</h2><p>Consulte cálculos por período, instituição, operador ou ID exato do paciente.</p></div><span class="retention-chip">Detalhes por 60 dias</span></div>
+        <section class="filters-card card" aria-label="Filtros do painel">
+          <div class="filters-grid">
+            <div class="field"><label for="period-filter">Período</label><div class="select-wrap"><select id="period-filter"><option value="7">Últimos 7 dias</option><option value="30" selected>Últimos 30 dias</option></select></div></div>
+            <div class="field"><label for="institution-filter">Instituição</label><div class="select-wrap"><select id="institution-filter"><option value="">Todas as instituições</option></select></div></div>
+            <div class="field"><label for="operator-filter">Operador</label><div class="select-wrap"><select id="operator-filter"><option value="">Todos os operadores</option></select></div></div>
+            <div class="field"><label for="patient-filter">ID exato do paciente</label><input id="patient-filter" type="search" maxlength="80" autocomplete="off" placeholder="Buscar ID"></div>
+          </div>
+          <button id="refresh-dashboard" class="secondary-button" type="button">Atualizar painel</button>
+          <p id="dashboard-status" class="status-message" role="status" aria-live="polite"></p>
+        </section>
+        <div class="metrics-grid" aria-live="polite">
+          <article class="metric-card"><span>Cálculos no período</span><strong id="metric-count">—</strong></article>
+          <article class="metric-card"><span>Volume calculado</span><strong id="metric-volume">—</strong></article>
+          <article class="metric-card"><span>Cálculos dentro da tabela</span><strong id="metric-success">—</strong></article>
+          <article class="metric-card"><span>Revisões necessárias</span><strong id="metric-review">—</strong></article>
+        </div>
+        <section class="history-card card" aria-labelledby="all-history-title">
+          <div class="card-heading"><div><span class="section-kicker">DETALHAMENTO</span><h2 id="all-history-title">Cálculos registrados</h2><p>IDs aparecem mascarados; a busca aceita o ID completo.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Data e hora</th><th>ID do paciente</th><th>Instituição</th><th>Operador</th><th>Exame</th><th>Contraste</th><th>Peso</th><th>Volume calculado</th><th>Situação</th></tr></thead><tbody id="dashboard-history-body"><tr><td colspan="9" class="table-empty">Ajuste os filtros e atualize o painel.</td></tr></tbody></table></div>
+        </section>
+        <div class="admin-grid">
+          <section class="card admin-card" aria-labelledby="institutions-title">
+            <div class="card-heading"><div><span class="section-kicker">CADASTRO</span><h2 id="institutions-title">Instituições</h2><p>Disponíveis para vincular a operadores.</p></div></div>
+            <form id="institution-form" class="inline-form"><div class="field"><label for="institution-name">Nome da clínica ou hospital</label><input id="institution-name" maxlength="120" required></div><button class="primary" type="submit">Adicionar instituição</button></form>
+            <p id="institution-status" class="status-message" role="status" aria-live="polite"></p>
+            <div class="admin-list-toggle" role="group" aria-label="Filtrar instituições">
+              <button id="show-active-institutions" type="button" aria-pressed="true">Ativas</button>
+              <button id="show-archived-institutions" type="button" aria-pressed="false">Arquivadas</button>
+            </div>
+            <div class="institution-list" id="institution-list"><p class="operator-empty">Nenhuma instituição carregada.</p></div>
+            <nav class="operator-pagination" id="institutions-pagination" aria-label="Paginação de instituições" hidden>
+              <p class="operator-pagination-summary" id="institutions-page-summary" role="status" aria-live="polite"></p>
+              <div class="operator-pagination-controls">
+                <button class="secondary-button operator-page-button" id="institutions-previous" type="button">Anterior</button>
+                <span class="operator-page" id="institutions-page-indicator"></span>
+                <button class="secondary-button operator-page-button" id="institutions-next" type="button">Próxima</button>
+              </div>
+            </nav>
+          </section>
+          <section class="card admin-card" aria-labelledby="operators-title">
+            <div class="card-heading"><div><span class="section-kicker">ACESSO</span><h2 id="operators-title">Operadores</h2><p>Gerencie solicitações, vínculos e acesso.</p></div></div>
+            <div class="admin-list-toggle" role="group" aria-label="Filtrar operadores">
+              <button id="show-current-operators" type="button" aria-pressed="true">Operadores</button>
+              <button id="show-removed-operators" type="button" aria-pressed="false">Removidos</button>
+            </div>
+            <div class="operator-list" id="operators-body"><p class="operator-empty">Nenhum operador carregado.</p></div>
+            <nav class="operator-pagination" id="operators-pagination" aria-label="Paginação de operadores" hidden>
+              <p class="operator-pagination-summary" id="operators-page-summary" role="status" aria-live="polite"></p>
+              <div class="operator-pagination-controls">
+                <button class="secondary-button operator-page-button" id="operators-previous" type="button">Anterior</button>
+                <span class="operator-page" id="operators-page-indicator"></span>
+                <button class="secondary-button operator-page-button" id="operators-next" type="button">Próxima</button>
+              </div>
+            </nav>
+          </section>
+        </div>
+        <section class="history-card card" aria-labelledby="archive-title">
+          <div class="card-heading"><div><span class="section-kicker">APÓS 60 DIAS</span><h2 id="archive-title">Totais mensais agregados</h2><p>Sem ID do paciente, peso ou identificação do operador.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Mês</th><th>Instituição</th><th>Cálculos</th><th>Dentro da tabela</th><th>Revisões</th><th>Volume calculado</th></tr></thead><tbody id="archive-body"><tr><td colspan="6" class="table-empty">Os totais serão arquivados após 60 dias.</td></tr></tbody></table></div>
+        </section>
+      </section>
+    </div>
+
+    <div class="source-note"><span aria-hidden="true">✳</span><p>Resultado calculado a partir das tabelas ClariACE aprovadas e registrado para auditoria. A calculadora apoia a prática clínica; confira o protocolo e a orientação do profissional responsável.</p></div>
+  </main>
+  <footer><div class="footer-inner"><span>ClariACE <b> / </b> Calculadora de contraste</span><span>Apoio à prática clínica</span></div></footer>
+  <script type="module" src="app.js?v=20261102-3"></script>
+</body>
+</html>
 

@@ -1,10 +1,28 @@
 # Calculadora ClariACE
 
-Abra `index.html` em um navegador moderno ou execute `python -m http.server 8765` nesta pasta e acesse `http://localhost:8765`. É um site estático, sem servidor de dados ou instalação de dependências.
+Calculadora web estática publicada no GitHub Pages, com autenticação, histórico detalhado e painel de gestão no Supabase.
 
-As tabelas em `data.js` foram extraídas das três planilhas fornecidas pelo script `build_data.py` (Python e openpyxl são necessários apenas para regenerar os dados). O resultado mostra a planilha e a célula de origem. As faixas são interpretadas literalmente: até 80 kg e acima de 81 kg; os valores intermediários não têm resultado quando a tabela usa essas faixas. Para músculos com injetora, a tabela não contém valor acima de 80 kg. Para a concentração 370, os limites registrados são verificados e, quando ultrapassados, o cálculo é sinalizado para revisão, sem aplicar um limite automaticamente. As tabelas com injetora também registram 1,80 m na coluna de altura, cuja aplicação precisa ser confirmada.
+## Desenvolvimento
 
-Antes do uso assistencial, a equipe clínica responsável deve validar as tabelas, seus limites, as lacunas de peso, o significado da altura e a adequação dos cálculos ao protocolo da instituição.
+1. Instale Node.js 20 ou superior.
+2. Execute `npm install`.
+3. Execute `npm run build` para gerar o cliente Supabase e montar o frontend público em `site/`.
+4. Inicie um servidor local com `python -m http.server 8765` e abra `http://localhost:8765`.
 
-O navegador pode salvar localmente a concentração, os canais, o uso de injetora e o tipo de exame para restaurá-los na próxima visita. O peso do paciente não é salvo. Use “Apagar preferências salvas” para remover essas escolhas deste navegador. Esse armazenamento é local ao navegador e ao endereço do site; não sincroniza entre dispositivos e não usa um servidor.
+O site continua sem servidor de aplicação próprio. O endereço do projeto e a chave publishable ficam no código do navegador; nenhuma chave `service_role` é usada no frontend. As tabelas e funções limitam as operações por autenticação e RLS.
+
+## Preparar o Supabase
+
+Veja [SETUP.md](SETUP.md) para permitir o retorno de autenticação, criar a primeira conta administradora global da plataforma e liberar operadores vinculados às clínicas.
+
+## Dados e retenção
+
+- Um cálculo registrado contém ID do paciente, concentração, canais, injetora, exame, peso, volume calculado, fluxo, referência de Jelco, célula de origem, operador, instituição e data/hora.
+- Nome, CPF e prontuário do paciente não são solicitados nem armazenados.
+- Detalhes do cálculo são ocultados após 60 dias e removidos pelo processo automático do banco. O processo roda de hora em hora.
+- Após a remoção, permanecem totais mensais agrupados por instituição: quantidade de cálculos, quantidade de resultados que pediram revisão e volume calculado. Esses totais não contêm ID do paciente, peso, operador ou data/hora individual.
+- O volume agregado representa o que a calculadora calculou, não confirmação de que o contraste foi administrado.
+- O ID do paciente é exibido sem censura ao operador nos próprios cálculos e aos administradores globais nos relatórios. Operadores consultam apenas os registros autorizados da própria conta/instituição.
+
+As regras e observações das planilhas ficam no schema privado do Supabase; o navegador recebe somente os nomes dos exames disponíveis por uma RPC autenticada e envia os parâmetros para outra função segura calcular. A Action de GitHub Pages publica apenas `site/`, que contém o frontend e seus assets. Dados derivados das planilhas, casos de auditoria e migrações do banco são mantidos fora deste repositório público. O provisionamento do banco é gerido separadamente pela equipe ClariACE. Valide mudanças das regras com a equipe clínica responsável antes de uso assistencial.
 

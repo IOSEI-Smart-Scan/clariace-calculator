@@ -1,0 +1,17 @@
+{
+  "name": "clariace-contrast-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:supabase && npm run build:site",
+    "build:supabase": "esbuild src/supabase-client.js --bundle --format=esm --minify --outfile=assets/supabase-client.js",
+    "build:site": "node scripts/build_site.cjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.118.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
+

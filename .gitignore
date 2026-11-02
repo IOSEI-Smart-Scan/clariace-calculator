@@ -1,0 +1,14 @@
+node_modules/
+npm-debug.log*
+/data.js
+/audit_cases.json
+/drive-download-*/
+/logos-clariace/
+/site/
+/audit_system.cjs
+/build_data.py
+/scripts/generate_rule_migration.cjs
+/assets/supabase-client.js
+/supabase/migrations/
+/supabase/.temp/
+
