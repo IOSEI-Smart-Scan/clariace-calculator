@@ -53,6 +53,8 @@ const operatorsNext = $('#operators-next');
 const showCurrentOperators = $('#show-current-operators');
 const showRemovedOperators = $('#show-removed-operators');
 const archiveBody = $('#archive-body');
+const protocolList = $('#protocol-list');
+const protocolStatus = $('#protocol-status');
 const PREFERENCES_KEY = 'clariace-calculator.preferences.v1';
 const OPERATORS_PAGE_SIZE = 5;
 const INSTITUTIONS_PAGE_SIZE = 5;
@@ -77,6 +79,9 @@ let institutionsPage = 1;
 let institutionsView = 'active';
 let calculatorOptions = [];
 let savedExamPreference = '';
+let protocolVersionsCache = [];
+const protocolRulesCache = new Map();
+let expandedProtocolVersionId = '';
 
 function setStatus(element, message, tone = '') {
   element.textContent = message;
@@ -557,7 +562,8 @@ function renderServerResult(data, weightKg) {
     answer.append(jelco);
   }
 
-  answer.append(element('p', 'source', `Fonte: concentração ${concentration.value} · ${data.source_sheet} · célula ${data.source_cell}${injector.value === 'com' ? ' · referência de Jelco da tabela' : ''}`));
+  const protocolLabel = data.protocol_version ? ` · protocolo ${data.protocol_version}` : '';
+  answer.append(element('p', 'source', `Fonte: concentração ${concentration.value} · ${data.source_sheet} · célula ${data.source_cell}${protocolLabel}${injector.value === 'com' ? ' · referência de Jelco da tabela' : ''}`));
   if (data.notes?.length) {
     const notes = element('div', 'notes');
     notes.append(element('strong', '', 'Observações da tabela'));
@@ -1028,8 +1034,133 @@ async function loadArchivedMetrics() {
 
 async function loadAdminPanel() {
   await populateAdminData();
-  await loadArchivedMetrics();
+  await Promise.all([loadArchivedMetrics(), loadProtocolManagement()]);
 }
+
+async function loadProtocolManagement() {
+  const { data, error } = await supabase.rpc('admin_list_protocol_versions');
+  if (error || !Array.isArray(data)) {
+    setStatus(protocolStatus, 'Não foi possível carregar os protocolos. Confira a migração do Supabase e tente novamente.', 'error');
+    return false;
+  }
+  protocolVersionsCache = data;
+  renderProtocolManagement();
+  return true;
+}
+
+function renderProtocolManagement() {
+  protocolList.replaceChildren();
+  if (!protocolVersionsCache.length) {
+    protocolList.append(element('p', 'operator-empty', 'Nenhum protocolo institucional foi importado.'));
+    return;
+  }
+
+  protocolVersionsCache.forEach(protocol => {
+    const card = element('article', 'protocol-item');
+    const header = element('div', 'protocol-item-head');
+    const identity = element('div', 'protocol-identity');
+    identity.append(
+      element('h3', 'protocol-name', protocol.institution_name),
+      element('p', 'protocol-meta', `${protocol.concentration} · tomógrafo de ${protocol.channels} canais · ${protocol.version_label}`)
+    );
+    const stateClass = protocol.status === 'active' ? 'is-active' : protocol.status === 'draft' ? 'is-draft' : 'is-superseded';
+    const stateText = protocol.status === 'active' ? 'Em uso' : protocol.status === 'draft' ? 'Rascunho' : 'Substituído';
+    header.append(identity, element('span', `protocol-state ${stateClass}`, stateText));
+    const detail = element('p', 'protocol-meta', `${protocol.rule_count} regras · aba “${protocol.source_sheet}”`);
+    const actions = element('div', 'protocol-actions');
+    const review = element('button', 'small-button', expandedProtocolVersionId === protocol.id ? 'Ocultar regras' : 'Revisar regras');
+    review.type = 'button';
+    review.setAttribute('aria-expanded', String(expandedProtocolVersionId === protocol.id));
+    review.addEventListener('click', () => { void toggleProtocolRules(protocol.id); });
+    actions.append(review);
+    if (protocol.status === 'draft') {
+      const activate = element('button', 'primary protocol-activate', 'Ativar protocolo');
+      activate.type = 'button';
+      activate.addEventListener('click', () => { void activateProtocol(protocol, activate); });
+      actions.append(activate);
+    }
+    card.append(header, detail, actions);
+    if (expandedProtocolVersionId === protocol.id) {
+      const rulesPanel = element('div', 'protocol-rules-panel');
+      const rules = protocolRulesCache.get(protocol.id);
+      if (rules === undefined) {
+        rulesPanel.append(element('p', 'protocol-loading', 'Carregando regras…'));
+      } else if (!rules.length) {
+        rulesPanel.append(element('p', 'protocol-loading', 'Esta versão não contém regras.'));
+      } else {
+        const tableWrap = element('div', 'protocol-table-wrap');
+        const table = element('table', 'protocol-table');
+        const thead = element('thead');
+        const headRow = element('tr');
+        ['Exame', 'Aplicação do peso', 'Volume', 'Fluxo', 'Jelco', 'Limite', 'Origem'].forEach(label => headRow.append(element('th', '', label)));
+        thead.append(headRow);
+        const tbody = element('tbody');
+        rules.forEach(rule => {
+          const row = element('tr');
+          const band = rule.weight_band === 'UP_TO_80' ? 'Até 80 kg' : rule.weight_band === 'OVER_81' ? 'A partir de 81 kg' : 'Regra geral';
+          const volume = `${fmt(rule.table_amount)} ${rule.is_per_kg ? 'mL/kg' : 'mL'}`;
+          const jelco = rule.jelco_reference && Object.keys(rule.jelco_reference).length
+            ? Object.entries(rule.jelco_reference).sort((a, b) => Number(a[0]) - Number(b[0])).map(([gauge, flow]) => `${gauge}G: ${fmt(flow)} mL/seg`).join(' · ')
+            : '—';
+          const limit = rule.limit_ml == null ? '—' : `${fmt(rule.limit_ml)} mL`;
+          const source = `${rule.source_sheet} · ${rule.source_cell}`;
+          [displayName(rule.exam_key), band, volume, rule.flow_ml_s == null ? '—' : `${fmt(rule.flow_ml_s)} mL/seg`, jelco, limit, source]
+            .forEach(value => row.append(element('td', '', value)));
+          tbody.append(row);
+          if (Array.isArray(rule.notes) && rule.notes.length) {
+            const noteRow = element('tr', 'protocol-note-row');
+            const cell = element('td', '', rule.notes.join(' · '));
+            cell.colSpan = 7;
+            noteRow.append(cell);
+            tbody.append(noteRow);
+          }
+        });
+        table.append(thead, tbody);
+        tableWrap.append(table);
+        rulesPanel.append(tableWrap);
+      }
+      card.append(rulesPanel);
+    }
+    protocolList.append(card);
+  });
+}
+
+async function toggleProtocolRules(protocolId) {
+  if (expandedProtocolVersionId === protocolId) {
+    expandedProtocolVersionId = '';
+    renderProtocolManagement();
+    return;
+  }
+  expandedProtocolVersionId = protocolId;
+  renderProtocolManagement();
+  if (!protocolRulesCache.has(protocolId)) {
+    const { data, error } = await supabase.rpc('admin_list_protocol_rules', { p_protocol_version_id: protocolId });
+    if (error || !Array.isArray(data)) {
+      expandedProtocolVersionId = '';
+      setStatus(protocolStatus, 'Não foi possível carregar as regras desta versão.', 'error');
+      renderProtocolManagement();
+      return;
+    }
+    protocolRulesCache.set(protocolId, data);
+  }
+  renderProtocolManagement();
+}
+
+async function activateProtocol(protocol, button) {
+  const message = `Ativar o protocolo de ${protocol.institution_name} para o tomógrafo de ${protocol.channels} canais?\n\nA partir daí, ele será usado nos novos cálculos com contraste 370 dessa combinação. Confira as regras antes de continuar. Os registros anteriores não serão alterados.`;
+  if (!window.confirm(message)) return;
+  button.disabled = true;
+  const { error } = await supabase.rpc('admin_activate_protocol_version', { p_protocol_version_id: protocol.id });
+  button.disabled = false;
+  if (error) {
+    setStatus(protocolStatus, 'Não foi possível ativar este protocolo. Atualize a página e confira o status da unidade.', 'error');
+    return;
+  }
+  setStatus(protocolStatus, `Protocolo ativado para ${protocol.institution_name} · ${protocol.channels} canais.`, 'success');
+  await loadProtocolManagement();
+}
+
+$('#refresh-protocols').addEventListener('click', () => { void loadProtocolManagement(); });
 
 function dashboardRange() {
   const days = Number($('#period-filter').value) || 30;
@@ -1101,4 +1232,5 @@ supabase.auth.getSession().then(({ data, error }) => {
   if (error) setStatus(authStatus, 'Não foi possível restaurar sua sessão. Entre novamente.', 'error');
   void applySession(data?.session || null);
 });
+
 

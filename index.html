@@ -181,6 +181,15 @@
             </nav>
           </section>
         </div>
+        <section class="history-card card protocol-admin-card" aria-labelledby="protocols-title">
+          <div class="card-heading protocol-admin-heading">
+            <div><span class="section-kicker">PROTOCOLOS / 370</span><h2 id="protocols-title">Protocolos por unidade</h2><p>Revise as regras importadas antes de ativar uma versão para novos cálculos.</p></div>
+            <button id="refresh-protocols" class="secondary-button" type="button">Atualizar</button>
+          </div>
+          <p class="protocol-safety-note"><strong>Importação em rascunho.</strong> O cálculo atual de cada unidade continua valendo até um administrador ativar um protocolo. A ativação afeta cálculos novos; os registros anteriores permanecem como foram calculados.</p>
+          <p id="protocol-status" class="status-message" role="status" aria-live="polite"></p>
+          <div id="protocol-list" class="protocol-list"><p class="operator-empty">Os protocolos aparecerão aqui.</p></div>
+        </section>
         <section class="history-card card" aria-labelledby="archive-title">
           <div class="card-heading"><div><span class="section-kicker">APÓS 60 DIAS</span><h2 id="archive-title">Totais mensais agregados</h2><p>Sem ID do paciente, peso ou identificação do operador.</p></div></div>
           <div class="table-wrap"><table><thead><tr><th>Mês</th><th>Instituição</th><th>Cálculos</th><th>Dentro da tabela</th><th>Revisões</th><th>Volume calculado</th></tr></thead><tbody id="archive-body"><tr><td colspan="6" class="table-empty">Os totais serão arquivados após 60 dias.</td></tr></tbody></table></div>
@@ -191,7 +200,8 @@
     <div class="source-note"><span aria-hidden="true">✳</span><p>Resultado calculado a partir das tabelas ClariACE aprovadas e registrado para auditoria. A calculadora apoia a prática clínica; confira o protocolo e a orientação do profissional responsável.</p></div>
   </main>
   <footer><div class="footer-inner"><span>ClariACE <b> / </b> Calculadora de contraste</span><span>Apoio à prática clínica</span></div></footer>
-  <script type="module" src="app.js?v=20261102-3"></script>
+  <script type="module" src="app.js?v=20261117-protocolos-1"></script>
 </body>
 </html>
+
 

@@ -55,4 +55,30 @@
 .operator-restore{min-height:44px}
 @media(max-width:560px){.admin-list-toggle button{min-height:44px}.institution-item{align-items:stretch}.institution-identity{flex-basis:100%}.institution-action{width:100%}.operator-action-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.operator-action-buttons button{width:100%}.operator-restore{width:100%}}
 
+.protocol-admin-card{margin-top:20px;padding:26px}
+.protocol-admin-heading{align-items:center;margin-bottom:16px}
+.protocol-admin-heading .secondary-button{flex:0 0 auto}
+.protocol-safety-note{margin:0 0 16px;padding:12px 14px;border:1px solid #d5e9eb;border-radius:10px;background:#f1f9fa;color:#365c65;font-size:13px}
+.protocol-safety-note strong{color:#0b6576}
+.protocol-list{display:grid;gap:12px}
+.protocol-item{min-width:0;padding:16px;border:1px solid #e2ecee;border-radius:12px;background:#fff}
+.protocol-item-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.protocol-identity{min-width:0}
+.protocol-name{margin:0 0 4px;color:#103c49;font-size:15px;line-height:1.35;overflow-wrap:anywhere}
+.protocol-meta{margin:0 0 8px;color:#617b83;font-size:12px;overflow-wrap:anywhere}
+.protocol-state{flex:0 0 auto;padding:5px 9px;border-radius:999px;font-size:10px;font-weight:750}
+.protocol-state.is-active{background:#e8f7f0;color:#176c56}
+.protocol-state.is-draft{background:#fff3dc;color:#8b5b05}
+.protocol-state.is-superseded{background:#edf2f4;color:#4c646d}
+.protocol-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:10px}
+.protocol-activate{width:auto;min-height:40px;padding:8px 13px;font-size:12px}
+.protocol-rules-panel{margin-top:14px;padding-top:14px;border-top:1px solid #e6eef0}
+.protocol-loading{margin:0;color:#617b83;font-size:13px}
+.protocol-table-wrap{width:100%;overflow:auto;border:1px solid #e4edef;border-radius:9px}
+.protocol-table{min-width:950px}
+.protocol-table th,.protocol-table td{padding:9px 10px;font-size:11px}
+.protocol-note-row td{background:#fff9e9;color:#745b25;font-size:11px}
+@media(max-width:600px){.protocol-admin-card{padding:18px}.protocol-admin-heading{align-items:flex-start}.protocol-admin-heading .secondary-button{min-height:40px;padding:8px 10px}.protocol-item-head{align-items:flex-start;flex-direction:column}.protocol-state{max-width:100%}.protocol-actions{justify-content:stretch}.protocol-actions button{flex:1}}
+
+
 
