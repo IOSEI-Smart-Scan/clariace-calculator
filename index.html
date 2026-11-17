@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07384a">
   <meta name="description" content="Calculadora ClariACE de volume de contraste, com registro seguro de uso por instituição e operador.">
   <title>Calculadora de contraste | ClariACE</title>
-  <link rel="stylesheet" href="style.css?v=20261102-2">
+  <link rel="stylesheet" href="style.css?v=20261117-admin-search-2">
 </head>
 <body>
   <header class="header">
@@ -147,9 +147,15 @@
         </section>
         <div class="admin-grid">
           <section class="card admin-card" aria-labelledby="institutions-title">
-            <div class="card-heading"><div><span class="section-kicker">CADASTRO</span><h2 id="institutions-title">Instituições</h2><p>Disponíveis para vincular a operadores.</p></div></div>
-            <form id="institution-form" class="inline-form"><div class="field"><label for="institution-name">Nome da clínica ou hospital</label><input id="institution-name" maxlength="120" required></div><button class="primary" type="submit">Adicionar instituição</button></form>
+            <div class="card-heading"><div><span class="section-kicker">CADASTRO</span><h2 id="institutions-title">Instituições</h2><p>Cadastre unidades e configure seus protocolos.</p></div></div>
+            <button id="add-institution" class="primary institution-create-button" type="button">Cadastrar instituição</button>
             <p id="institution-status" class="status-message" role="status" aria-live="polite"></p>
+            <div class="admin-search-field">
+              <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.75"></circle><path d="m16 16 4 4"></path></svg>
+              <label class="sr-only" for="institution-search">Buscar instituição</label>
+              <input id="institution-search" type="search" placeholder="Buscar por nome da unidade" autocomplete="off">
+            </div>
+            <p id="institution-search-count" class="admin-search-count" role="status" aria-live="polite"></p>
             <div class="admin-list-toggle" role="group" aria-label="Filtrar instituições">
               <button id="show-active-institutions" type="button" aria-pressed="true">Ativas</button>
               <button id="show-archived-institutions" type="button" aria-pressed="false">Arquivadas</button>
@@ -166,6 +172,12 @@
           </section>
           <section class="card admin-card" aria-labelledby="operators-title">
             <div class="card-heading"><div><span class="section-kicker">ACESSO</span><h2 id="operators-title">Operadores</h2><p>Gerencie solicitações, vínculos e acesso.</p></div></div>
+            <div class="admin-search-field">
+              <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.75"></circle><path d="m16 16 4 4"></path></svg>
+              <label class="sr-only" for="operator-search">Buscar operadores</label>
+              <input id="operator-search" type="search" placeholder="Nome, e-mail ou instituição" autocomplete="off">
+            </div>
+            <p id="operator-search-count" class="admin-search-count" role="status" aria-live="polite"></p>
             <div class="admin-list-toggle" role="group" aria-label="Filtrar operadores">
               <button id="show-current-operators" type="button" aria-pressed="true">Operadores</button>
               <button id="show-removed-operators" type="button" aria-pressed="false">Removidos</button>
@@ -181,27 +193,82 @@
             </nav>
           </section>
         </div>
-        <section class="history-card card protocol-admin-card" aria-labelledby="protocols-title">
-          <div class="card-heading protocol-admin-heading">
-            <div><span class="section-kicker">PROTOCOLOS / 370</span><h2 id="protocols-title">Protocolos por unidade</h2><p>Revise as regras importadas antes de ativar uma versão para novos cálculos.</p></div>
-            <button id="refresh-protocols" class="secondary-button" type="button">Atualizar</button>
-          </div>
-          <p class="protocol-safety-note"><strong>Importação em rascunho.</strong> O cálculo atual de cada unidade continua valendo até um administrador ativar um protocolo. A ativação afeta cálculos novos; os registros anteriores permanecem como foram calculados.</p>
-          <p id="protocol-status" class="status-message" role="status" aria-live="polite"></p>
-          <div id="protocol-list" class="protocol-list"><p class="operator-empty">Os protocolos aparecerão aqui.</p></div>
-        </section>
         <section class="history-card card" aria-labelledby="archive-title">
           <div class="card-heading"><div><span class="section-kicker">APÓS 60 DIAS</span><h2 id="archive-title">Totais mensais agregados</h2><p>Sem ID do paciente, peso ou identificação do operador.</p></div></div>
           <div class="table-wrap"><table><thead><tr><th>Mês</th><th>Instituição</th><th>Cálculos</th><th>Dentro da tabela</th><th>Revisões</th><th>Volume calculado</th></tr></thead><tbody id="archive-body"><tr><td colspan="6" class="table-empty">Os totais serão arquivados após 60 dias.</td></tr></tbody></table></div>
         </section>
       </section>
+
+      <dialog id="institution-dialog" class="management-dialog" aria-labelledby="institution-dialog-title">
+        <form id="institution-protocol-form" class="dialog-panel" novalidate>
+          <header class="dialog-heading">
+            <div><span class="section-kicker">CADASTRO / PROTOCOLO 370</span><h2 id="institution-dialog-title">Nova instituição</h2><p id="institution-dialog-description">Informe a unidade e configure o protocolo antes de salvar.</p></div>
+            <button id="close-institution-dialog" class="dialog-close" type="button" aria-label="Fechar cadastro">×</button>
+          </header>
+          <div class="dialog-body">
+            <div class="protocol-base-fields">
+              <div class="field"><label for="institution-name">Clínica ou hospital</label><input id="institution-name" name="institution-name" maxlength="120" autocomplete="organization" required></div>
+              <div class="field"><label for="protocol-channels">Canais do tomógrafo</label><div class="select-wrap"><select id="protocol-channels" required><option value="">Selecione</option><option value="16">16 canais</option><option value="64">64 canais</option><option value="160">160 canais</option></select></div></div>
+              <div class="field"><label for="protocol-version-label">Versão</label><input id="protocol-version-label" maxlength="40" value="v1" required></div>
+            </div>
+            <p id="institution-protocol-status" class="status-message" role="status" aria-live="polite"></p>
+            <div class="protocol-mode-switch" role="group" aria-label="Como cadastrar o protocolo">
+              <button type="button" class="is-selected" data-protocol-mode="manual" aria-pressed="true">Preencher formulário</button>
+              <button type="button" data-protocol-mode="import" aria-pressed="false">Importar planilha</button>
+            </div>
+            <section id="manual-protocol-panel" class="protocol-entry-panel" aria-labelledby="manual-protocol-title">
+              <div class="protocol-panel-heading"><div><h3 id="manual-protocol-title">Regras do protocolo</h3><p>Adicione uma regra por exame e faixa de peso.</p></div></div>
+              <div class="manual-rule-fields">
+                <div class="field"><label for="manual-exam">Exame</label><input id="manual-exam" list="protocol-exam-options" maxlength="100" placeholder="Ex.: Crânio"><datalist id="protocol-exam-options"></datalist></div>
+                <div class="field"><label for="manual-weight-band">Faixa de peso</label><div class="select-wrap"><select id="manual-weight-band"><option value="ANY">Regra geral</option><option value="UP_TO_80">Até 80 kg</option><option value="OVER_81">A partir de 81 kg</option></select></div></div>
+                <div class="field"><label for="manual-amount">Volume</label><input id="manual-amount" type="text" inputmode="decimal" placeholder="Ex.: 0,7" autocomplete="off"></div>
+                <div class="field"><label for="manual-unit">Unidade do volume</label><div class="select-wrap"><select id="manual-unit"><option value="per_kg">mL/kg</option><option value="ml">mL</option></select></div></div>
+                <div class="field"><label for="manual-flow">Fluxo (mL/seg)</label><input id="manual-flow" type="text" inputmode="decimal" placeholder="Opcional" autocomplete="off"></div>
+                <div class="field"><label for="manual-limit">Volume máximo (mL)</label><input id="manual-limit" type="text" inputmode="decimal" placeholder="Opcional" autocomplete="off"></div>
+              </div>
+              <fieldset class="jelco-fields"><legend>Referência de Jelco (mL/seg)</legend>
+                <div class="jelco-inputs"><div class="field"><label for="manual-jelco-22">22G</label><input id="manual-jelco-22" type="text" inputmode="decimal" placeholder="Opcional"></div><div class="field"><label for="manual-jelco-20">20G</label><input id="manual-jelco-20" type="text" inputmode="decimal" placeholder="Opcional"></div><div class="field"><label for="manual-jelco-18">18G</label><input id="manual-jelco-18" type="text" inputmode="decimal" placeholder="Opcional"></div></div>
+              </fieldset>
+              <div class="field"><label for="manual-notes">Observações da tabela</label><textarea id="manual-notes" rows="2" maxlength="500" placeholder="Opcional"></textarea></div>
+              <button id="add-manual-rule" class="secondary-button add-rule-button" type="button">Adicionar regra</button>
+              <p id="manual-rule-status" class="status-message" role="status" aria-live="polite"></p>
+              <div id="manual-rule-list" class="staged-rule-list"><p class="operator-empty">Nenhuma regra adicionada.</p></div>
+            </section>
+            <section id="import-protocol-panel" class="protocol-entry-panel" aria-labelledby="import-protocol-title" hidden>
+              <div class="protocol-panel-heading"><div><h3 id="import-protocol-title">Importar da planilha</h3><p>Selecione uma aba e associe suas colunas aos campos do protocolo.</p></div></div>
+              <p class="protocol-import-hint">A planilha é lida neste navegador e não é armazenada. A importação espera uma linha por exame ou faixa de peso; colunas separadas para “até 80 kg” e “a partir de 81 kg” também são reconhecidas.</p>
+              <div class="protocol-import-settings">
+                <div class="field"><label for="protocol-file">Arquivo .xlsx</label><input id="protocol-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+                <div class="field"><label for="protocol-sheet">Aba da planilha</label><div class="select-wrap"><select id="protocol-sheet" disabled><option value="">Selecione um arquivo primeiro</option></select></div></div>
+                <div class="field"><label for="protocol-header-row">Linha dos títulos</label><div class="select-wrap"><select id="protocol-header-row" disabled><option value="">Selecione uma aba primeiro</option></select></div></div>
+                <div class="field"><label for="protocol-default-unit">Unidade padrão, se não estiver na planilha</label><div class="select-wrap"><select id="protocol-default-unit"><option value="">Exigir unidade em cada volume</option><option value="per_kg">mL/kg</option><option value="ml">mL</option></select></div></div>
+              </div>
+              <div id="protocol-column-mapping" class="protocol-column-mapping" hidden></div>
+              <p id="protocol-import-status" class="status-message" role="status" aria-live="polite"></p>
+            </section>
+            <section id="protocol-preview-section" class="protocol-preview-section" aria-labelledby="protocol-preview-title" hidden>
+              <div class="protocol-panel-heading"><div><h3 id="protocol-preview-title">Prévia do mapeamento</h3><p id="protocol-preview-summary">Confira os dados antes de inserir.</p></div></div>
+              <div class="protocol-table-wrap"><table class="protocol-table"><thead><tr><th>Exame</th><th>Faixa</th><th>Volume</th><th>Fluxo</th><th>Jelco</th><th>Limite</th><th>Origem</th></tr></thead><tbody id="protocol-preview-body"><tr><td colspan="7" class="table-empty">Adicione regras para visualizar a prévia.</td></tr></tbody></table></div>
+              <p id="protocol-preview-more" class="protocol-import-hint"></p>
+            </section>
+          </div>
+          <footer class="dialog-actions"><button id="cancel-institution-dialog" class="secondary-button" type="button">Cancelar</button><button id="save-institution-protocol" class="primary" type="submit">Confirmar e salvar rascunho</button></footer>
+        </form>
+      </dialog>
+
+      <dialog id="protocol-manage-dialog" class="management-dialog" aria-labelledby="protocol-manage-title">
+        <div class="dialog-panel">
+          <header class="dialog-heading"><div><span class="section-kicker">GESTÃO / REGRAS CLÍNICAS</span><h2 id="protocol-manage-title">Protocolos da instituição</h2><p id="protocol-manage-description">Revise cada versão antes de ativá-la para cálculos novos.</p></div><button id="close-protocol-manage" class="dialog-close" type="button" aria-label="Fechar protocolos">×</button></header>
+          <div class="dialog-body"><p id="protocol-manage-status" class="status-message" role="status" aria-live="polite"></p><div id="protocol-manage-list" class="protocol-list"><p class="operator-empty">Carregando protocolos…</p></div></div>
+          <footer class="dialog-actions"><button id="add-institution-protocol" class="secondary-button" type="button">Adicionar versão</button><button id="done-protocol-manage" class="primary" type="button">Concluir</button></footer>
+        </div>
+      </dialog>
     </div>
 
     <div class="source-note"><span aria-hidden="true">✳</span><p>Resultado calculado a partir das tabelas ClariACE aprovadas e registrado para auditoria. A calculadora apoia a prática clínica; confira o protocolo e a orientação do profissional responsável.</p></div>
   </main>
   <footer><div class="footer-inner"><span>ClariACE <b> / </b> Calculadora de contraste</span><span>Apoio à prática clínica</span></div></footer>
-  <script type="module" src="app.js?v=20261117-protocolos-1"></script>
+  <script type="module" src="app.js?v=20261117-admin-search-2"></script>
 </body>
 </html>
-
 

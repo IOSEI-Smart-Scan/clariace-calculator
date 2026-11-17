@@ -9,6 +9,7 @@ npm-debug.log*
 /build_data.py
 /scripts/generate_rule_migration.cjs
 /assets/supabase-client.js
+/assets/xlsx-reader.js
 /supabase/migrations/
 /supabase/.temp/
 

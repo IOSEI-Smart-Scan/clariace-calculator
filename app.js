@@ -1,4 +1,5 @@
 import { createClient } from './assets/supabase-client.js';
+import { readWorkbook } from './assets/xlsx-reader.js';
 
 const SUPABASE_URL = 'https://awnslocbcqolikzmaixz.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_uPqrlhFsvMXUE0QWDW432g_J4LBF9LM';
@@ -37,6 +38,8 @@ const institutionsFilter = $('#institution-filter');
 const operatorsFilter = $('#operator-filter');
 const patientFilter = $('#patient-filter');
 const institutionList = $('#institution-list');
+const institutionSearch = $('#institution-search');
+const institutionSearchCount = $('#institution-search-count');
 const institutionsPagination = $('#institutions-pagination');
 const institutionsPageSummary = $('#institutions-page-summary');
 const institutionsPageIndicator = $('#institutions-page-indicator');
@@ -45,6 +48,8 @@ const institutionsNext = $('#institutions-next');
 const showActiveInstitutions = $('#show-active-institutions');
 const showArchivedInstitutions = $('#show-archived-institutions');
 const operatorsBody = $('#operators-body');
+const operatorSearch = $('#operator-search');
+const operatorSearchCount = $('#operator-search-count');
 const operatorsPagination = $('#operators-pagination');
 const operatorsPageSummary = $('#operators-page-summary');
 const operatorsPageIndicator = $('#operators-page-indicator');
@@ -53,8 +58,9 @@ const operatorsNext = $('#operators-next');
 const showCurrentOperators = $('#show-current-operators');
 const showRemovedOperators = $('#show-removed-operators');
 const archiveBody = $('#archive-body');
-const protocolList = $('#protocol-list');
-const protocolStatus = $('#protocol-status');
+const institutionDialog = $('#institution-dialog');
+const protocolManageDialog = $('#protocol-manage-dialog');
+const protocolManageList = $('#protocol-manage-list');
 const PREFERENCES_KEY = 'clariace-calculator.preferences.v1';
 const OPERATORS_PAGE_SIZE = 5;
 const INSTITUTIONS_PAGE_SIZE = 5;
@@ -81,6 +87,15 @@ let calculatorOptions = [];
 let savedExamPreference = '';
 let protocolVersionsCache = [];
 const protocolRulesCache = new Map();
+let managedInstitution = null;
+let protocolTargetInstitution = null;
+let protocolEntryMode = 'manual';
+let parsedWorkbookSheets = [];
+let stagedProtocolRules = [];
+let manualProtocolRules = [];
+let importHeaderIndex = 0;
+let importColumnMap = {};
+let importValidationErrors = [];
 let expandedProtocolVersionId = '';
 
 function setStatus(element, message, tone = '') {
@@ -678,16 +693,18 @@ async function loadPersonalHistory() {
 }
 
 async function populateAdminData() {
-  const [institutionResponse, operatorResponse] = await Promise.all([
+  const [institutionResponse, operatorResponse, protocolResponse] = await Promise.all([
     supabase.from('institutions').select('id,name,archived_at').order('name'),
-    supabase.from('profiles').select('user_id,email,display_name,role,institution_id,is_active,requested_institution,removed_at').eq('role', 'operator').order('created_at', { ascending: false })
+    supabase.from('profiles').select('user_id,email,display_name,role,institution_id,is_active,requested_institution,removed_at').eq('role', 'operator').order('created_at', { ascending: false }),
+    supabase.rpc('admin_list_institution_protocols')
   ]);
-  if (institutionResponse.error || operatorResponse.error) {
+  if (institutionResponse.error || operatorResponse.error || protocolResponse.error) {
     setStatus($('#dashboard-status'), 'Não foi possível carregar as instituições e operadores.', 'error');
     return false;
   }
   institutionsCache = institutionResponse.data;
   operatorsCache = operatorResponse.data;
+  protocolVersionsCache = protocolResponse.data || [];
   const institutionValue = institutionsFilter.value;
   institutionsFilter.replaceChildren(new Option('Todas as instituições', ''));
   institutionsCache.forEach(institution => {
@@ -718,17 +735,46 @@ function updateInstitutionViewButtons() {
   showArchivedInstitutions.setAttribute('aria-pressed', String(institutionsView === 'archived'));
 }
 
+function getInstitutionItemsForView() {
+  const archivedView = institutionsView === 'archived';
+  const query = normalizeText(institutionSearch.value);
+  return institutionsCache
+    .filter(institution => Boolean(institution.archived_at) === archivedView)
+    .filter(institution => !query || normalizeText(institution.name).includes(query));
+}
+
 function renderInstitutionManagement() {
   const archivedView = institutionsView === 'archived';
-  const items = institutionsCache.filter(institution => Boolean(institution.archived_at) === archivedView);
+  const queryText = institutionSearch.value.trim();
+  const items = getInstitutionItemsForView();
   institutionList.replaceChildren();
+  institutionSearchCount.textContent = queryText
+    ? `${items.length} ${items.length === 1 ? 'unidade encontrada' : 'unidades encontradas'}`
+    : `${items.length} ${archivedView ? 'unidades arquivadas' : 'unidades ativas'}`;
 
   if (!items.length) {
-    const message = archivedView ? 'Nenhuma instituição arquivada.' : 'Nenhuma instituição cadastrada.';
+    const message = queryText
+      ? `Nenhuma unidade encontrada para “${queryText}”.`
+      : archivedView ? 'Nenhuma instituição arquivada.' : 'Nenhuma instituição cadastrada.';
+    const emptyState = element('div', 'search-empty-state');
     const empty = element('p', 'operator-empty', message);
     empty.setAttribute('role', 'status');
-    institutionList.append(empty);
+    emptyState.append(empty);
+    if (queryText) {
+      const clear = element('button', 'search-empty-clear', 'Limpar busca');
+      clear.type = 'button';
+      clear.setAttribute('aria-label', 'Limpar busca por instituições');
+      clear.addEventListener('click', () => {
+        institutionSearch.value = '';
+        institutionsPage = 1;
+        renderInstitutionManagement();
+        institutionSearch.focus();
+      });
+      emptyState.append(clear);
+    }
+    institutionList.append(emptyState);
     institutionsPagination.hidden = true;
+    institutionsPage = 1;
     return;
   }
 
@@ -738,15 +784,29 @@ function renderInstitutionManagement() {
   items.slice(start, start + INSTITUTIONS_PAGE_SIZE).forEach(institution => {
     const card = element('article', 'institution-item');
     const identity = element('div', 'institution-identity');
+    const versions = protocolVersionsCache.filter(protocol => protocol.institution_id === institution.id);
+    const activeProtocol = versions.find(protocol => protocol.status === 'active');
+    const pendingCount = versions.filter(protocol => protocol.status === 'draft').length;
+    const protocolSummary = activeProtocol
+      ? `Protocolo 370 em uso · ${activeProtocol.channels} canais${pendingCount ? ` · ${pendingCount} versão(ões) em revisão` : ''}`
+      : versions.length
+        ? `${versions.length} versão(ões) aguardando revisão ou ativação`
+        : 'Protocolo ainda não cadastrado';
     identity.append(
       element('h3', 'institution-name', institution.name),
-      element('p', 'institution-state-copy', archivedView ? 'Arquivada; mantida para preservar o histórico.' : 'Disponível para novos vínculos.')
+      element('p', 'institution-state-copy', archivedView ? 'Arquivada; mantida para preservar o histórico.' : 'Disponível para novos vínculos.'),
+      element('p', 'institution-protocol-summary', protocolSummary)
     );
     const state = element('span', `institution-state ${archivedView ? 'is-archived' : 'is-active'}`, archivedView ? 'Arquivada' : 'Ativa');
     const action = element('button', archivedView ? 'small-button institution-action' : 'danger-button institution-action', archivedView ? 'Restaurar' : 'Excluir');
     action.type = 'button';
     action.addEventListener('click', () => { void changeInstitutionState(institution, archivedView, action); });
-    card.append(identity, state, action);
+    const actions = element('div', 'institution-card-actions');
+    const manage = element('button', 'small-button institution-manage-protocol', versions.length ? 'Gerenciar protocolo' : 'Configurar protocolo');
+    manage.type = 'button';
+    manage.addEventListener('click', () => { void openProtocolManager(institution); });
+    actions.append(manage, action);
+    card.append(identity, state, actions);
     institutionList.append(card);
   });
 
@@ -795,15 +855,49 @@ function updateOperatorViewButtons() {
   showRemovedOperators.setAttribute('aria-pressed', String(operatorsView === 'removed'));
 }
 
+function getOperatorItemsForView() {
+  const removedView = operatorsView === 'removed';
+  const query = normalizeText(operatorSearch.value);
+  return operatorsCache.filter(operator => {
+    if (Boolean(operator.removed_at) !== removedView) return false;
+    if (!query) return true;
+    const linkedInstitution = institutionsCache.find(institution => institution.id === operator.institution_id);
+    return [operator.display_name, operator.email, operator.requested_institution, linkedInstitution?.name]
+      .some(value => normalizeText(value).includes(query));
+  });
+}
+
 function renderOperatorManagement() {
   operatorsBody.replaceChildren();
   const removedView = operatorsView === 'removed';
-  const items = operatorsCache.filter(operator => Boolean(operator.removed_at) === removedView);
+  const queryText = operatorSearch.value.trim();
+  const items = getOperatorItemsForView();
+  operatorSearchCount.textContent = queryText
+    ? `${items.length} ${items.length === 1 ? 'operador encontrado' : 'operadores encontrados'}`
+    : `${items.length} ${removedView ? 'operadores removidos' : 'operadores'}`;
   if (!items.length) {
-    const empty = element('p', 'operator-empty', removedView ? 'Nenhum operador removido.' : 'Nenhuma solicitação de operador.');
+    const emptyMessage = queryText
+      ? `Nenhum operador encontrado para “${queryText}”.`
+      : removedView ? 'Nenhum operador removido.' : 'Nenhuma solicitação de operador.';
+    const emptyState = element('div', 'search-empty-state');
+    const empty = element('p', 'operator-empty', emptyMessage);
     empty.setAttribute('role', 'status');
-    operatorsBody.append(empty);
+    emptyState.append(empty);
+    if (queryText) {
+      const clear = element('button', 'search-empty-clear', 'Limpar busca');
+      clear.type = 'button';
+      clear.setAttribute('aria-label', 'Limpar busca por operadores');
+      clear.addEventListener('click', () => {
+        operatorSearch.value = '';
+        operatorsPage = 1;
+        renderOperatorManagement();
+        operatorSearch.focus();
+      });
+      emptyState.append(clear);
+    }
+    operatorsBody.append(emptyState);
     operatorsPagination.hidden = true;
+    operatorsPage = 1;
     return;
   }
   const pageCount = Math.ceil(items.length / OPERATORS_PAGE_SIZE);
@@ -963,6 +1057,14 @@ showActiveInstitutions.addEventListener('click', () => setInstitutionView('activ
 showArchivedInstitutions.addEventListener('click', () => setInstitutionView('archived'));
 showCurrentOperators.addEventListener('click', () => setOperatorView('current'));
 showRemovedOperators.addEventListener('click', () => setOperatorView('removed'));
+institutionSearch.addEventListener('input', () => {
+  institutionsPage = 1;
+  renderInstitutionManagement();
+});
+operatorSearch.addEventListener('input', () => {
+  operatorsPage = 1;
+  renderOperatorManagement();
+});
 
 operatorsPrevious.addEventListener('click', () => {
   if (operatorsPage > 1) {
@@ -972,7 +1074,7 @@ operatorsPrevious.addEventListener('click', () => {
 });
 
 operatorsNext.addEventListener('click', () => {
-  const itemCount = operatorsCache.filter(operator => Boolean(operator.removed_at) === (operatorsView === 'removed')).length;
+  const itemCount = getOperatorItemsForView().length;
   if (operatorsPage < Math.ceil(itemCount / OPERATORS_PAGE_SIZE)) {
     operatorsPage += 1;
     renderOperatorManagement();
@@ -987,24 +1089,631 @@ institutionsPrevious.addEventListener('click', () => {
 });
 
 institutionsNext.addEventListener('click', () => {
-  const itemCount = institutionsCache.filter(institution => Boolean(institution.archived_at) === (institutionsView === 'archived')).length;
+  const itemCount = getInstitutionItemsForView().length;
   if (institutionsPage < Math.ceil(itemCount / INSTITUTIONS_PAGE_SIZE)) {
     institutionsPage += 1;
     renderInstitutionManagement();
   }
 });
 
-$('#institution-form').addEventListener('submit', async event => {
+const protocolExamKeys = [
+  'CRANIO', 'PESCOÇO', 'TORAX', 'ABDOME', 'PELVE', 'MUSCULOS', 'OMBRO', 'BRAÇO', 'COTOVELO',
+  'ANTEBRAÇO', 'PUNHO,MÃO', 'QUADRIL', 'COXA', 'JOELHO', 'PERNA', 'TORNOZELO', 'CALCANEO', 'PE',
+  'ANGIO CRANIO', 'ANGIO CARÓTIDAS', 'ANGIO CRANIO/CARÓTIDAS', 'ANGIO TEP', 'ANGIO AORTA',
+  'ANGIO MEMBROS INFERIORES', 'ANGIO DE CORONÁRIAS', 'ANGIO ABDOME'
+];
+const columnTargets = [
+  { key: 'exam_key', label: 'Exame', required: true, hints: ['exame', 'procedimento', 'regiao anatomica', 'regiao'] },
+  { key: 'table_amount', label: 'Volume geral / por linha', hints: ['volume', 'quantidade', 'contraste', 'dose'], excludes: ['maximo', 'limite', 'ate 80', 'acima de 80', 'acima de 81'] },
+  { key: 'amount_up_to_80', label: 'Volume até 80 kg', hints: ['ate 80', '<= 80', 'ate80'] },
+  { key: 'amount_over_81', label: 'Volume a partir de 81 kg', hints: ['acima de 81', 'a partir de 81', '> 80', '> 81', '81 kg'] },
+  { key: 'weight_band', label: 'Faixa de peso (opcional)', hints: ['faixa de peso', 'faixa', 'peso'] },
+  { key: 'unit', label: 'Unidade do volume (opcional)', hints: ['unidade', 'ml/kg', 'ml por kg'] },
+  { key: 'flow_ml_s', label: 'Fluxo (mL/seg)', hints: ['fluxo', 'ml/seg', 'ml/s'] },
+  { key: 'jelco_22', label: 'Jelco 22G (mL/seg)', hints: ['jelco 22', '22g'] },
+  { key: 'jelco_20', label: 'Jelco 20G (mL/seg)', hints: ['jelco 20', '20g'] },
+  { key: 'jelco_18', label: 'Jelco 18G (mL/seg)', hints: ['jelco 18', '18g'] },
+  { key: 'limit_ml', label: 'Volume máximo (mL)', hints: ['limite', 'maximo', 'teto', 'volume max'] },
+  { key: 'notes', label: 'Observações', hints: ['observacao', 'observacoes', 'nota', 'obs'] }
+];
+
+function normalizeText(value) {
+  return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function normalizeExamKey(value) {
+  const candidate = String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR');
+  const canonical = protocolExamKeys.find(key => normalizeText(key) === normalizeText(candidate));
+  return canonical || candidate;
+}
+
+function parseDecimal(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  const match = String(value).trim().replace(/\s/g, '').match(/[-+]?\d+(?:[.,]\d+)?/);
+  return match ? Number(match[0].replace(',', '.')) : NaN;
+}
+
+function parseUnit(value, volumeValue, fallback) {
+  const volumeText = normalizeText(volumeValue).replace(/\s/g, '');
+  const unitText = normalizeText(value).replace(/\s/g, '');
+  if (/ml\/?kg|\/kg|kg-1|por\s*kg/.test(volumeText) || /ml\/?kg|\/kg|kg-1|por\s*kg/.test(unitText)) return true;
+  if (volumeText.includes('ml') || /\bml\b|mililitro|fixo/.test(unitText)) return false;
+  if (/^kg$|\/kg|kg-1|por\s*kg/.test(unitText)) return true;
+  if (fallback === 'per_kg') return true;
+  if (fallback === 'ml') return false;
+  return null;
+}
+
+function parseWeightBand(value) {
+  const text = normalizeText(value);
+  if (!text || /^(geral|regra geral|qualquer|todos|todas|any|—|-)$/.test(text)) return 'ANY';
+  if (/ate\s*80|<=\s*80|≤\s*80|ate80/.test(text)) return 'UP_TO_80';
+  if (/81|acima|a partir|maior|>|over/.test(text)) return 'OVER_81';
+  return null;
+}
+
+function formatBand(band) {
+  return band === 'UP_TO_80' ? 'Até 80 kg' : band === 'OVER_81' ? 'A partir de 81 kg' : 'Regra geral';
+}
+
+function formatRuleJelco(rule) {
+  const jelco = rule.jelco_reference || {};
+  return Object.keys(jelco).length
+    ? Object.entries(jelco).sort((a, b) => Number(a[0]) - Number(b[0])).map(([gauge, flow]) => `${gauge}G: ${fmt(flow)}`).join(' · ')
+    : '—';
+}
+
+function renderProtocolPreview(rules, errors = [], visible = rules.length > 0) {
+  stagedProtocolRules = rules;
+  const section = $('#protocol-preview-section');
+  section.hidden = !visible;
+  const summary = $('#protocol-preview-summary');
+  const body = $('#protocol-preview-body');
+  const more = $('#protocol-preview-more');
+  summary.textContent = errors.length
+    ? `${rules.length} regra(s) mapeada(s); corrija ${errors.length} pendência(s) antes de salvar.`
+    : `${rules.length} regra(s) pronta(s) para revisão.`;
+  body.replaceChildren();
+  rules.slice(0, 25).forEach(rule => {
+    const row = element('tr');
+    const values = [
+      displayName(rule.exam_key),
+      formatBand(rule.weight_band),
+      `${fmt(rule.table_amount)} ${rule.is_per_kg ? 'mL/kg' : 'mL'}`,
+      rule.flow_ml_s === null ? '—' : `${fmt(rule.flow_ml_s)} mL/seg`,
+      formatRuleJelco(rule),
+      rule.limit_ml === null ? '—' : `${fmt(rule.limit_ml)} mL`,
+      `${rule.source_sheet} · ${rule.source_cell}`
+    ];
+    values.forEach(value => row.append(element('td', '', value)));
+    body.append(row);
+  });
+  if (!rules.length) {
+    const row = element('tr');
+    const cell = element('td', 'table-empty', errors.length ? 'Ajuste o mapeamento para gerar uma prévia.' : 'Adicione regras para visualizar a prévia.');
+    cell.colSpan = 7;
+    row.append(cell);
+    body.append(row);
+  }
+  more.textContent = rules.length > 25 ? `Exibindo 25 de ${rules.length} regras. Todas serão enviadas após sua confirmação.` : '';
+  if (protocolEntryMode === 'import') {
+    setStatus($('#protocol-import-status'), errors.slice(0, 5).join(' '), errors.length ? 'error' : 'success');
+  }
+}
+
+function getSuggestedVersion(institutionId, channels) {
+  const current = protocolVersionsCache.filter(protocol => protocol.institution_id === institutionId && protocol.channels === Number(channels));
+  const numbers = current.map(protocol => Number(String(protocol.version_label).match(/^v(\d+)$/i)?.[1] || 0));
+  return `v${Math.max(0, ...numbers) + 1}`;
+}
+
+function setProtocolEntryMode(mode) {
+  protocolEntryMode = mode;
+  $('#manual-protocol-panel').hidden = mode !== 'manual';
+  $('#import-protocol-panel').hidden = mode !== 'import';
+  document.querySelectorAll('[data-protocol-mode]').forEach(button => {
+    const selected = button.dataset.protocolMode === mode;
+    button.classList.toggle('is-selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  if (mode === 'manual') renderProtocolPreview(manualProtocolRules, [], manualProtocolRules.length > 0);
+  else if (parsedWorkbookSheets.length) updateImportedProtocolPreview();
+  else renderProtocolPreview([], [], false);
+}
+
+function resetInstitutionProtocolForm(institution = null) {
+  protocolTargetInstitution = institution;
+  manualProtocolRules = [];
+  stagedProtocolRules = [];
+  parsedWorkbookSheets = [];
+  importColumnMap = {};
+  importValidationErrors = [];
+  importHeaderIndex = 0;
+  $('#institution-protocol-form').reset();
+  $('#institution-name').disabled = Boolean(institution);
+  $('#institution-name').value = institution?.name || '';
+  $('#institution-dialog-title').textContent = institution ? `Protocolo de ${institution.name}` : 'Nova instituição';
+  $('#institution-dialog-description').textContent = institution
+    ? 'Adicione uma versão em rascunho; a instituição existente e seus registros serão preservados.'
+    : 'Informe a unidade e configure o protocolo antes de salvar.';
+  $('#protocol-channels').value = '';
+  $('#protocol-version-label').value = institution ? '' : 'v1';
+  $('#protocol-file').value = '';
+  $('#protocol-sheet').replaceChildren(new Option('Selecione um arquivo primeiro', ''));
+  $('#protocol-sheet').disabled = true;
+  $('#protocol-header-row').replaceChildren(new Option('Selecione uma aba primeiro', ''));
+  $('#protocol-header-row').disabled = true;
+  $('#protocol-column-mapping').replaceChildren();
+  $('#protocol-column-mapping').hidden = true;
+  $('#manual-rule-list').replaceChildren(element('p', 'operator-empty', 'Nenhuma regra adicionada.'));
+  $('#protocol-preview-section').hidden = true;
+  $('#protocol-default-unit').value = '';
+  setStatus($('#institution-protocol-status'), '');
+  setStatus($('#manual-rule-status'), '');
+  setStatus($('#protocol-import-status'), '');
+  const active = institution && protocolVersionsCache.find(protocol => protocol.institution_id === institution.id && protocol.status === 'active');
+  if (institution && active) $('#protocol-channels').value = String(active.channels);
+  if (institution && active) $('#protocol-version-label').value = getSuggestedVersion(institution.id, active.channels);
+  setProtocolEntryMode('manual');
+  if (institution) $('#protocol-channels').focus();
+}
+
+function openInstitutionProtocolDialog(institution = null) {
+  resetInstitutionProtocolForm(institution);
+  institutionDialog.showModal();
+  if (!institution) $('#institution-name').focus();
+}
+
+function columnLetter(index) {
+  let number = index + 1;
+  let result = '';
+  while (number > 0) {
+    const remainder = (number - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    number = Math.floor((number - 1) / 26);
+  }
+  return result;
+}
+
+function chooseHeaderRow(rows) {
+  let bestIndex = 0;
+  let bestScore = -1;
+  rows.slice(0, 20).forEach((row, rowIndex) => {
+    const headers = row.map(normalizeText).filter(Boolean);
+    const joined = headers.join(' ');
+    let score = 0;
+    if (/exame|procedimento|regiao/.test(joined)) score += 2;
+    if (/volume|quantidade|contraste|dose|ml/.test(joined)) score += 2;
+    if (/fluxo|jelco|peso|80|81/.test(joined)) score += 1;
+    score += Math.min(headers.length, 4) * 0.1;
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = rowIndex;
+    }
+  });
+  return bestIndex;
+}
+
+function guessColumnMap(headers) {
+  const map = {};
+  const normalized = headers.map(normalizeText);
+  for (const target of columnTargets) {
+    const found = normalized.findIndex(header => {
+      if (!header || target.excludes?.some(part => header.includes(normalizeText(part)))) return false;
+      return target.hints.some(hint => header.includes(normalizeText(hint)));
+    });
+    map[target.key] = found < 0 ? '' : String(found);
+  }
+  const volumeTarget = columnTargets.find(target => target.key === 'table_amount');
+  const volumeIndex = normalized.findIndex(header => header && !volumeTarget.excludes?.some(part => header.includes(normalizeText(part))) && volumeTarget.hints.some(hint => header.includes(normalizeText(hint))));
+  if (volumeIndex >= 0 && map.amount_up_to_80 === String(volumeIndex)) map.amount_up_to_80 = '';
+  return map;
+}
+
+function currentImportSheet() {
+  const sheetName = $('#protocol-sheet').value;
+  return parsedWorkbookSheets.find(sheet => sheet.name === sheetName) || null;
+}
+
+function renderColumnMappings() {
+  const sheet = currentImportSheet();
+  const container = $('#protocol-column-mapping');
+  container.replaceChildren();
+  if (!sheet) {
+    container.hidden = true;
+    return;
+  }
+  const headers = sheet.rows[importHeaderIndex] || [];
+  const columns = Array.from({ length: Math.max(1, ...headers.map((_, index) => index + 1)) }, (_, index) => ({
+    index,
+    title: String(headers[index] ?? '').trim() || `Coluna ${columnLetter(index)}`
+  }));
+  const heading = element('div', 'protocol-mapping-heading');
+  heading.append(element('h4', '', 'Mapeie as colunas'), element('p', '', 'Revise as sugestões automáticas e corrija os campos antes de confirmar.'));
+  container.append(heading);
+  const grid = element('div', 'protocol-mapping-grid');
+  for (const target of columnTargets) {
+    const field = element('div', 'field protocol-map-field');
+    const label = element('label', '', target.label + (target.required ? ' *' : ''));
+    const select = element('select');
+    select.id = `protocol-map-${target.key}`;
+    select.add(new Option(target.key === 'exam_key' ? 'Selecione a coluna' : 'Não mapear', ''));
+    columns.forEach(column => select.add(new Option(`${column.title} (${columnLetter(column.index)})`, String(column.index))));
+    select.value = importColumnMap[target.key] || '';
+    select.addEventListener('change', () => {
+      importColumnMap[target.key] = select.value;
+      updateImportedProtocolPreview();
+    });
+    label.htmlFor = select.id;
+    field.append(label, select);
+    grid.append(field);
+  }
+  container.append(grid);
+  container.hidden = false;
+  updateImportedProtocolPreview();
+}
+
+function setImportHeaderOptions() {
+  const sheet = currentImportSheet();
+  const selector = $('#protocol-header-row');
+  selector.replaceChildren();
+  if (!sheet || !sheet.rows.length) {
+    selector.add(new Option('A aba está vazia', ''));
+    selector.disabled = true;
+    $('#protocol-column-mapping').hidden = true;
+    return;
+  }
+  const count = Math.min(sheet.rows.length, 20);
+  for (let index = 0; index < count; index += 1) {
+    const sample = sheet.rows[index].map(value => String(value ?? '').trim()).filter(Boolean).join(' · ').slice(0, 100);
+    selector.add(new Option(`Linha ${index + 1}${sample ? ` — ${sample}` : ''}`, String(index)));
+  }
+  importHeaderIndex = chooseHeaderRow(sheet.rows);
+  selector.value = String(importHeaderIndex);
+  selector.disabled = false;
+  const headers = sheet.rows[importHeaderIndex] || [];
+  importColumnMap = guessColumnMap(headers);
+  renderColumnMappings();
+}
+
+function handleImportSheetChange() {
+  setImportHeaderOptions();
+}
+
+async function handleProtocolFile(file) {
+  parsedWorkbookSheets = [];
+  importColumnMap = {};
+  renderProtocolPreview([], [], false);
+  setStatus($('#protocol-import-status'), '');
+  if (!file) return;
+  setStatus($('#protocol-import-status'), 'Lendo a planilha neste navegador…');
+  try {
+    parsedWorkbookSheets = await readWorkbook(file);
+    const selector = $('#protocol-sheet');
+    selector.replaceChildren();
+    parsedWorkbookSheets.forEach(sheet => selector.add(new Option(sheet.name, sheet.name)));
+    selector.disabled = false;
+    handleImportSheetChange();
+    if (!parsedWorkbookSheets.some(sheet => sheet.rows.length)) throw new Error('Nenhuma aba possui linhas para importar.');
+  } catch (error) {
+    parsedWorkbookSheets = [];
+    $('#protocol-sheet').replaceChildren(new Option('Selecione um arquivo primeiro', ''));
+    $('#protocol-sheet').disabled = true;
+    $('#protocol-header-row').replaceChildren(new Option('Selecione uma aba primeiro', ''));
+    $('#protocol-header-row').disabled = true;
+    $('#protocol-column-mapping').replaceChildren();
+    $('#protocol-column-mapping').hidden = true;
+    renderProtocolPreview([], [], false);
+    setStatus($('#protocol-import-status'), error?.message || 'Não foi possível ler a planilha. Confira o arquivo e tente novamente.', 'error');
+  }
+}
+
+function mappedCellReference(rowNumber, columnIndexes) {
+  return [...new Set(columnIndexes.filter(index => index !== null && index !== undefined).map(index => `${columnLetter(index)}${rowNumber}`))].join(' / ') || `Linha ${rowNumber}`;
+}
+
+function updateImportedProtocolPreview() {
+  const sheet = currentImportSheet();
+  if (!sheet) return;
+  const headers = sheet.rows[importHeaderIndex] || [];
+  const getIndex = key => importColumnMap[key] === '' || importColumnMap[key] === undefined ? null : Number(importColumnMap[key]);
+  const examIndex = getIndex('exam_key');
+  const amountIndex = getIndex('table_amount');
+  const underIndex = getIndex('amount_up_to_80');
+  const overIndex = getIndex('amount_over_81');
+  const weightIndex = getIndex('weight_band');
+  const unitIndex = getIndex('unit');
+  const flowIndex = getIndex('flow_ml_s');
+  const jelcoIndexes = [['22', getIndex('jelco_22')], ['20', getIndex('jelco_20')], ['18', getIndex('jelco_18')]];
+  const limitIndex = getIndex('limit_ml');
+  const notesIndex = getIndex('notes');
+  const errors = [];
+  const rules = [];
+  const seen = new Set();
+
+  const availableAmount = amountIndex !== null || underIndex !== null || overIndex !== null;
+  if (examIndex === null) errors.push('Selecione a coluna do exame.');
+  if (!availableAmount) errors.push('Mapeie o volume geral ou uma coluna de volume por faixa de peso.');
+
+  for (let rowIndex = importHeaderIndex + 1; rowIndex < sheet.rows.length; rowIndex += 1) {
+    const row = sheet.rows[rowIndex] || [];
+    if (row.every(value => String(value ?? '').trim() === '')) continue;
+    const rawExam = examIndex === null ? '' : row[examIndex];
+    const examKey = normalizeExamKey(rawExam);
+    const rawBand = weightIndex === null ? '' : row[weightIndex];
+    const bandFromColumn = parseWeightBand(rawBand);
+    const rawNotes = notesIndex === null ? '' : String(row[notesIndex] ?? '').trim();
+    const rowRules = [];
+    const volumeColumns = [
+      { key: 'table_amount', index: amountIndex, fixedBand: null },
+      { key: 'amount_up_to_80', index: underIndex, fixedBand: 'UP_TO_80' },
+      { key: 'amount_over_81', index: overIndex, fixedBand: 'OVER_81' }
+    ];
+    for (const volumeColumn of volumeColumns) {
+      if (volumeColumn.index === null) continue;
+      const rawVolume = row[volumeColumn.index];
+      if (rawVolume === null || rawVolume === undefined || String(rawVolume).trim() === '') continue;
+      if (!examKey) {
+        errors.push(`Linha ${rowIndex + 1}: há volume sem exame associado.`);
+        continue;
+      }
+      if (weightIndex !== null && String(rawBand ?? '').trim() && !bandFromColumn) {
+        errors.push(`Linha ${rowIndex + 1}: faixa de peso não reconhecida (“${String(rawBand).slice(0, 40)}”).`);
+        continue;
+      }
+      const amount = parseDecimal(rawVolume);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        errors.push(`Linha ${rowIndex + 1}: volume inválido para ${examKey}.`);
+        continue;
+      }
+      const rawUnit = unitIndex === null ? '' : row[unitIndex];
+      const isPerKg = parseUnit(rawUnit, rawVolume, $('#protocol-default-unit').value);
+      if (isPerKg === null) {
+        errors.push(`Linha ${rowIndex + 1}: informe se o volume de ${examKey} é mL ou mL/kg.`);
+        continue;
+      }
+      const weightBand = volumeColumn.fixedBand || bandFromColumn || 'ANY';
+      const flow = flowIndex === null ? null : parseDecimal(row[flowIndex]);
+      const limit = limitIndex === null ? null : parseDecimal(row[limitIndex]);
+      if (flow !== null && (!Number.isFinite(flow) || flow <= 0)) {
+        errors.push(`Linha ${rowIndex + 1}: fluxo inválido para ${examKey}.`);
+        continue;
+      }
+      if (limit !== null && (!Number.isFinite(limit) || limit <= 0)) {
+        errors.push(`Linha ${rowIndex + 1}: limite inválido para ${examKey}.`);
+        continue;
+      }
+      const jelco = {};
+      let invalidJelco = false;
+      for (const [gauge, index] of jelcoIndexes) {
+        if (index === null || row[index] === null || row[index] === undefined || String(row[index]).trim() === '') continue;
+        const value = parseDecimal(row[index]);
+        if (!Number.isFinite(value) || value <= 0) invalidJelco = true;
+        else jelco[gauge] = value;
+      }
+      if (invalidJelco) {
+        errors.push(`Linha ${rowIndex + 1}: referência de Jelco inválida para ${examKey}.`);
+        continue;
+      }
+      const amountColumnIndex = volumeColumn.index;
+      const sourceCell = mappedCellReference(rowIndex + 1, [examIndex, amountColumnIndex, flowIndex, ...jelcoIndexes.map(item => item[1]), limitIndex]);
+      const formattedAmount = String(rawVolume).trim();
+      const valueText = normalizeText(formattedAmount).includes('ml')
+        ? formattedAmount
+        : `${fmt(amount)} ${isPerKg ? 'mL/kg' : 'mL'}`;
+      rowRules.push({
+        exam_key: examKey,
+        weight_band: weightBand,
+        value_text: valueText,
+        table_amount: amount,
+        is_per_kg: isPerKg,
+        flow_ml_s: flow,
+        jelco_reference: Object.keys(jelco).length ? jelco : null,
+        limit_ml: limit,
+        source_sheet: sheet.name,
+        source_cell: sourceCell,
+        notes: rawNotes ? [rawNotes] : []
+      });
+    }
+    if (!rowRules.length) continue;
+    rowRules.forEach(rule => {
+      const key = `${rule.exam_key}|${rule.weight_band}`;
+      if (seen.has(key)) errors.push(`Regra duplicada: ${displayName(rule.exam_key)} · ${formatBand(rule.weight_band)}.`);
+      else {
+        seen.add(key);
+        rules.push(rule);
+      }
+    });
+  }
+  importValidationErrors = errors;
+  renderProtocolPreview(rules, errors, true);
+}
+
+function renderManualRuleList() {
+  const list = $('#manual-rule-list');
+  list.replaceChildren();
+  if (!manualProtocolRules.length) {
+    list.append(element('p', 'operator-empty', 'Nenhuma regra adicionada.'));
+    renderProtocolPreview([], [], false);
+    return;
+  }
+  manualProtocolRules.forEach((rule, index) => {
+    const item = element('article', 'staged-rule-item');
+    const copy = element('div', 'staged-rule-copy');
+    copy.append(
+      element('strong', '', `${displayName(rule.exam_key)} · ${formatBand(rule.weight_band)}`),
+      element('span', '', `${fmt(rule.table_amount)} ${rule.is_per_kg ? 'mL/kg' : 'mL'}${rule.flow_ml_s ? ` · ${fmt(rule.flow_ml_s)} mL/seg` : ''}`)
+    );
+    const remove = element('button', 'danger-button staged-rule-remove', 'Remover');
+    remove.type = 'button';
+    remove.addEventListener('click', () => {
+      manualProtocolRules.splice(index, 1);
+      renderManualRuleList();
+    });
+    item.append(copy, remove);
+    list.append(item);
+  });
+  renderProtocolPreview(manualProtocolRules, [], true);
+}
+
+function addManualProtocolRule() {
+  const examKey = normalizeExamKey($('#manual-exam').value);
+  const band = $('#manual-weight-band').value;
+  const amount = parseDecimal($('#manual-amount').value);
+  const flow = parseDecimal($('#manual-flow').value);
+  const limit = parseDecimal($('#manual-limit').value);
+  if (!examKey || examKey.length > 100 || !Number.isFinite(amount) || amount <= 0) {
+    setStatus($('#manual-rule-status'), 'Informe um exame e um volume maior que zero.', 'error');
+    $('#manual-exam').focus();
+    return;
+  }
+  if (flow !== null && (!Number.isFinite(flow) || flow <= 0)) {
+    setStatus($('#manual-rule-status'), 'Informe um fluxo maior que zero ou deixe o campo vazio.', 'error');
+    $('#manual-flow').focus();
+    return;
+  }
+  if (limit !== null && (!Number.isFinite(limit) || limit <= 0)) {
+    setStatus($('#manual-rule-status'), 'Informe um volume máximo maior que zero ou deixe o campo vazio.', 'error');
+    $('#manual-limit').focus();
+    return;
+  }
+  if (manualProtocolRules.some(rule => rule.exam_key === examKey && rule.weight_band === band)) {
+    setStatus($('#manual-rule-status'), 'Essa combinação de exame e faixa já foi adicionada.', 'error');
+    return;
+  }
+  const jelco = {};
+  for (const [gauge, inputId] of [['22', 'manual-jelco-22'], ['20', 'manual-jelco-20'], ['18', 'manual-jelco-18']]) {
+    const value = parseDecimal($(`#${inputId}`).value);
+    if (value !== null && (!Number.isFinite(value) || value <= 0)) {
+      setStatus($('#manual-rule-status'), `A referência de Jelco ${gauge}G precisa ser maior que zero ou ficar vazia.`, 'error');
+      $(`#${inputId}`).focus();
+      return;
+    }
+    if (value !== null) jelco[gauge] = value;
+  }
+  const rawAmount = $('#manual-amount').value.trim().replace(',', '.');
+  const perKg = $('#manual-unit').value === 'per_kg';
+  manualProtocolRules.push({
+    exam_key: examKey,
+    weight_band: band,
+    value_text: `${rawAmount} ${perKg ? 'mL/kg' : 'mL'}`,
+    table_amount: amount,
+    is_per_kg: perKg,
+    flow_ml_s: flow,
+    jelco_reference: Object.keys(jelco).length ? jelco : null,
+    limit_ml: limit,
+    source_sheet: 'Cadastro manual',
+    source_cell: `Regra ${manualProtocolRules.length + 1}`,
+    notes: $('#manual-notes').value.trim() ? [$('#manual-notes').value.trim()] : []
+  });
+  setStatus($('#manual-rule-status'), 'Regra adicionada à prévia.', 'success');
+  $('#manual-exam').value = '';
+  $('#manual-weight-band').value = 'ANY';
+  $('#manual-amount').value = '';
+  $('#manual-flow').value = '';
+  $('#manual-limit').value = '';
+  $('#manual-jelco-22').value = '';
+  $('#manual-jelco-20').value = '';
+  $('#manual-jelco-18').value = '';
+  $('#manual-notes').value = '';
+  renderManualRuleList();
+  $('#manual-exam').focus();
+}
+
+$('#add-institution').addEventListener('click', () => openInstitutionProtocolDialog());
+$('#add-manual-rule').addEventListener('click', addManualProtocolRule);
+document.querySelectorAll('[data-protocol-mode]').forEach(button => button.addEventListener('click', () => setProtocolEntryMode(button.dataset.protocolMode)));
+$('#protocol-file').addEventListener('change', event => { void handleProtocolFile(event.target.files?.[0]); });
+$('#protocol-sheet').addEventListener('change', handleImportSheetChange);
+$('#protocol-header-row').addEventListener('change', event => {
+  importHeaderIndex = Number(event.target.value) || 0;
+  importColumnMap = guessColumnMap(currentImportSheet()?.rows[importHeaderIndex] || []);
+  renderColumnMappings();
+});
+$('#protocol-default-unit').addEventListener('change', updateImportedProtocolPreview);
+$('#protocol-channels').addEventListener('change', () => {
+  if (protocolTargetInstitution) $('#protocol-version-label').value = getSuggestedVersion(protocolTargetInstitution.id, $('#protocol-channels').value);
+});
+$('#close-institution-dialog').addEventListener('click', () => institutionDialog.close());
+$('#cancel-institution-dialog').addEventListener('click', () => institutionDialog.close());
+$('#close-protocol-manage').addEventListener('click', () => protocolManageDialog.close());
+$('#done-protocol-manage').addEventListener('click', () => protocolManageDialog.close());
+$('#add-institution-protocol').addEventListener('click', () => {
+  if (!managedInstitution || managedInstitution.archived_at) return;
+  protocolManageDialog.close();
+  openInstitutionProtocolDialog(managedInstitution);
+});
+
+$('#institution-protocol-form').addEventListener('submit', async event => {
   event.preventDefault();
   const name = $('#institution-name').value.trim();
-  if (!name) return;
-  setStatus($('#institution-status'), 'Salvando instituição…');
-  const { error } = await supabase.from('institutions').insert({ name }).select('id').single();
-  if (error) setStatus($('#institution-status'), 'Não foi possível cadastrar. Confira se esse nome já está ativo ou arquivado.', 'error');
-  else {
-    $('#institution-form').reset();
-    setStatus($('#institution-status'), 'Instituição cadastrada.', 'success');
-    await populateAdminData();
+  const channelsValue = Number($('#protocol-channels').value);
+  const versionLabel = $('#protocol-version-label').value.trim();
+  const rules = protocolEntryMode === 'manual' ? manualProtocolRules : stagedProtocolRules;
+  const duplicates = new Set();
+  let duplicateRule = false;
+  rules.forEach(rule => {
+    const key = `${rule.exam_key}|${rule.weight_band}`;
+    if (duplicates.has(key)) duplicateRule = true;
+    duplicates.add(key);
+  });
+  if (!protocolTargetInstitution && (!name || name.length > 120)) {
+    setStatus($('#institution-protocol-status'), 'Informe o nome da instituição (até 120 caracteres).', 'error');
+    $('#institution-name').focus();
+    return;
+  }
+  if (![16, 64, 160].includes(channelsValue)) {
+    setStatus($('#institution-protocol-status'), 'Selecione a quantidade de canais do tomógrafo.', 'error');
+    $('#protocol-channels').focus();
+    return;
+  }
+  if (!versionLabel || versionLabel.length > 40) {
+    setStatus($('#institution-protocol-status'), 'Informe o nome da versão do protocolo.', 'error');
+    $('#protocol-version-label').focus();
+    return;
+  }
+  if (!rules.length) {
+    setStatus($('#institution-protocol-status'), 'Adicione ou mapeie pelo menos uma regra antes de salvar.', 'error');
+    return;
+  }
+  if (duplicateRule || (protocolEntryMode === 'import' && importValidationErrors.length)) {
+    setStatus($('#institution-protocol-status'), 'Corrija as regras duplicadas ou as pendências de mapeamento antes de salvar.', 'error');
+    return;
+  }
+
+  const saveButton = $('#save-institution-protocol');
+  saveButton.disabled = true;
+  setStatus($('#institution-protocol-status'), 'Salvando instituição e protocolo como rascunho…');
+  const sourceFile = protocolEntryMode === 'import' ? $('#protocol-file').files?.[0]?.name || 'Planilha importada' : 'Cadastro manual';
+  const sourceSheet = protocolEntryMode === 'import' ? currentImportSheet()?.name || 'Aba importada' : 'Cadastro manual';
+  const { data, error } = await supabase.rpc('admin_save_institution_protocol', {
+    p_institution_id: protocolTargetInstitution?.id || null,
+    p_institution_name: name,
+    p_channels: channelsValue,
+    p_version_label: versionLabel,
+    p_source_file: sourceFile,
+    p_source_sheet: sourceSheet,
+    p_rules: rules
+  });
+  saveButton.disabled = false;
+  if (error) {
+    const serverMessage = String(error.message || '').toLowerCase();
+    const message = serverMessage.includes('institutions_name_ci_unique') || serverMessage.includes('duplicate institution')
+      ? 'Já existe uma instituição com esse nome. Confira as instituições ativas e arquivadas.'
+      : serverMessage.includes('protocol version already exists') || (serverMessage.includes('version') && serverMessage.includes('exist'))
+        ? 'Já existe essa versão para a instituição e o tomógrafo selecionados. Escolha outro nome de versão.'
+        : 'Não foi possível salvar. Revise os dados e confirme se a configuração do Supabase está atualizada.';
+    setStatus($('#institution-protocol-status'), message, 'error');
+    return;
+  }
+
+  institutionDialog.close();
+  await populateAdminData();
+  setStatus($('#institution-status'), `Protocolo ${data?.version_label || versionLabel} salvo como rascunho. Revise e ative em “Gerenciar protocolo”.`, 'success');
+  if (protocolTargetInstitution) {
+    const institution = institutionsCache.find(item => item.id === protocolTargetInstitution.id);
+    if (institution) await openProtocolManager(institution);
   }
 });
 
@@ -1034,39 +1743,46 @@ async function loadArchivedMetrics() {
 
 async function loadAdminPanel() {
   await populateAdminData();
-  await Promise.all([loadArchivedMetrics(), loadProtocolManagement()]);
+  await loadArchivedMetrics();
 }
 
-async function loadProtocolManagement() {
-  const { data, error } = await supabase.rpc('admin_list_protocol_versions');
-  if (error || !Array.isArray(data)) {
-    setStatus(protocolStatus, 'Não foi possível carregar os protocolos. Confira a migração do Supabase e tente novamente.', 'error');
-    return false;
-  }
-  protocolVersionsCache = data;
+async function openProtocolManager(institution) {
+  managedInstitution = institution;
+  expandedProtocolVersionId = '';
+  $('#protocol-manage-title').textContent = `Protocolos · ${institution.name}`;
+  $('#protocol-manage-description').textContent = institution.archived_at
+    ? 'Unidade arquivada. As versões e regras podem ser consultadas, mas não ativadas.'
+    : 'Revise cada versão antes de ativá-la para cálculos novos.';
+  setStatus($('#protocol-manage-status'), '');
+  protocolManageDialog.showModal();
   renderProtocolManagement();
-  return true;
 }
 
 function renderProtocolManagement() {
-  protocolList.replaceChildren();
-  if (!protocolVersionsCache.length) {
-    protocolList.append(element('p', 'operator-empty', 'Nenhum protocolo institucional foi importado.'));
+  protocolManageList.replaceChildren();
+  const addVersion = $('#add-institution-protocol');
+  addVersion.disabled = Boolean(managedInstitution?.archived_at);
+  addVersion.title = managedInstitution?.archived_at ? 'Restaure a instituição para adicionar uma versão.' : '';
+  const versions = protocolVersionsCache
+    .filter(protocol => protocol.institution_id === managedInstitution?.id)
+    .sort((a, b) => Number(b.channels) - Number(a.channels) || String(b.created_at).localeCompare(String(a.created_at)));
+  if (!versions.length) {
+    protocolManageList.append(element('p', 'operator-empty', 'Nenhum protocolo cadastrado para esta instituição.'));
     return;
   }
 
-  protocolVersionsCache.forEach(protocol => {
+  versions.forEach(protocol => {
     const card = element('article', 'protocol-item');
     const header = element('div', 'protocol-item-head');
     const identity = element('div', 'protocol-identity');
     identity.append(
-      element('h3', 'protocol-name', protocol.institution_name),
-      element('p', 'protocol-meta', `${protocol.concentration} · tomógrafo de ${protocol.channels} canais · ${protocol.version_label}`)
+      element('h3', 'protocol-name', `Versão ${protocol.version_label}`),
+      element('p', 'protocol-meta', `${protocol.concentration} · tomógrafo de ${protocol.channels} canais`)
     );
     const stateClass = protocol.status === 'active' ? 'is-active' : protocol.status === 'draft' ? 'is-draft' : 'is-superseded';
     const stateText = protocol.status === 'active' ? 'Em uso' : protocol.status === 'draft' ? 'Rascunho' : 'Substituído';
     header.append(identity, element('span', `protocol-state ${stateClass}`, stateText));
-    const detail = element('p', 'protocol-meta', `${protocol.rule_count} regras · aba “${protocol.source_sheet}”`);
+    const detail = element('p', 'protocol-meta', `${protocol.rule_count} regras · aba “${protocol.source_sheet}” · origem: ${protocol.source_file}`);
     const actions = element('div', 'protocol-actions');
     const review = element('button', 'small-button', expandedProtocolVersionId === protocol.id ? 'Ocultar regras' : 'Revisar regras');
     review.type = 'button';
@@ -1076,6 +1792,7 @@ function renderProtocolManagement() {
     if (protocol.status === 'draft') {
       const activate = element('button', 'primary protocol-activate', 'Ativar protocolo');
       activate.type = 'button';
+      activate.disabled = Boolean(managedInstitution?.archived_at);
       activate.addEventListener('click', () => { void activateProtocol(protocol, activate); });
       actions.append(activate);
     }
@@ -1121,7 +1838,7 @@ function renderProtocolManagement() {
       }
       card.append(rulesPanel);
     }
-    protocolList.append(card);
+    protocolManageList.append(card);
   });
 }
 
@@ -1137,7 +1854,7 @@ async function toggleProtocolRules(protocolId) {
     const { data, error } = await supabase.rpc('admin_list_protocol_rules', { p_protocol_version_id: protocolId });
     if (error || !Array.isArray(data)) {
       expandedProtocolVersionId = '';
-      setStatus(protocolStatus, 'Não foi possível carregar as regras desta versão.', 'error');
+      setStatus($('#protocol-manage-status'), 'Não foi possível carregar as regras desta versão.', 'error');
       renderProtocolManagement();
       return;
     }
@@ -1147,20 +1864,19 @@ async function toggleProtocolRules(protocolId) {
 }
 
 async function activateProtocol(protocol, button) {
-  const message = `Ativar o protocolo de ${protocol.institution_name} para o tomógrafo de ${protocol.channels} canais?\n\nA partir daí, ele será usado nos novos cálculos com contraste 370 dessa combinação. Confira as regras antes de continuar. Os registros anteriores não serão alterados.`;
+  const message = `Ativar a versão ${protocol.version_label} para ${managedInstitution?.name}, no tomógrafo de ${protocol.channels} canais?\n\nEla será usada nos novos cálculos com contraste 370. Os registros anteriores não serão alterados.`;
   if (!window.confirm(message)) return;
   button.disabled = true;
   const { error } = await supabase.rpc('admin_activate_protocol_version', { p_protocol_version_id: protocol.id });
   button.disabled = false;
   if (error) {
-    setStatus(protocolStatus, 'Não foi possível ativar este protocolo. Atualize a página e confira o status da unidade.', 'error');
+    setStatus($('#protocol-manage-status'), 'Não foi possível ativar este protocolo. Atualize a página e confira o status da unidade.', 'error');
     return;
   }
-  setStatus(protocolStatus, `Protocolo ativado para ${protocol.institution_name} · ${protocol.channels} canais.`, 'success');
-  await loadProtocolManagement();
+  setStatus($('#protocol-manage-status'), `Versão ${protocol.version_label} ativada para ${managedInstitution?.name} · ${protocol.channels} canais.`, 'success');
+  await populateAdminData();
+  renderProtocolManagement();
 }
-
-$('#refresh-protocols').addEventListener('click', () => { void loadProtocolManagement(); });
 
 function dashboardRange() {
   const days = Number($('#period-filter').value) || 30;
@@ -1232,5 +1948,4 @@ supabase.auth.getSession().then(({ data, error }) => {
   if (error) setStatus(authStatus, 'Não foi possível restaurar sua sessão. Entre novamente.', 'error');
   void applySession(data?.session || null);
 });
-
 

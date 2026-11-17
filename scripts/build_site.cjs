@@ -3,7 +3,7 @@ const path = require('node:path');
 
 const output = path.resolve('site');
 const publicFiles = ['index.html', 'app.js', 'style.css'];
-const publicAssets = ['assets/clariace-logo.png', 'assets/supabase-client.js'];
+const publicAssets = ['assets/clariace-logo.png', 'assets/supabase-client.js', 'assets/xlsx-reader.js'];
 
 fs.mkdirSync(output, { recursive: true });
 fs.mkdirSync(path.join(output, 'assets'), { recursive: true });
