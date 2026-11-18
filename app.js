@@ -24,6 +24,8 @@ const calculatorForm = $('#calculator');
 const patientId = $('#patient-id');
 const concentration = $('#concentration');
 const channels = $('#channels');
+const protocolChannel = $('#protocol-channel');
+const protocolChannelField = $('#protocol-channel-field');
 const injector = $('#injector');
 const exam = $('#exam');
 const weight = $('#weight');
@@ -67,6 +69,8 @@ const INSTITUTIONS_PAGE_SIZE = 5;
 const fmt = value => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(Number(value));
 const displayName = name => ({
   CRANIO: 'Crânio', PESCOÇO: 'Pescoço', TORAX: 'Tórax', ABDOME: 'Abdome', PELVE: 'Pelve', MUSCULOS: 'Músculos',
+  ANTEBRAÇO: 'Antebraço', BRAÇO: 'Braço', CALCANEO: 'Calcâneo', COTOVELO: 'Cotovelo', COXA: 'Coxa', JOELHO: 'Joelho',
+  OMBRO: 'Ombro', PE: 'Pé', PERNA: 'Perna', 'PUNHO,MÃO': 'Punho, mão', QUADRIL: 'Quadril', TORNOZELO: 'Tornozelo',
   'ANGIO CRANIO': 'Angio crânio', 'ANGIO CARÓTIDAS': 'Angio carótidas', 'ANGIO CRANIO/CARÓTIDAS': 'Angio crânio/carótidas',
   'ANGIO TEP': 'Angio TEP', 'ANGIO AORTA': 'Angio aorta', 'ANGIO ABDOME': 'Angio abdome',
   'ANGIO MEMBROS INFERIORES': 'Angio membros inferiores', 'ANGIO DE CORONÁRIAS': 'Angio de coronárias'
@@ -83,8 +87,12 @@ let operatorsPage = 1;
 let operatorsView = 'current';
 let institutionsPage = 1;
 let institutionsView = 'active';
-let calculatorOptions = [];
+let operatorProtocols = [];
+let selectedOperatorProtocol = null;
+let protocolRequiresChannelSelection = false;
+let protocolLoadState = 'idle';
 let savedExamPreference = '';
+let savedInjectorPreference = '';
 let protocolVersionsCache = [];
 const protocolRulesCache = new Map();
 let managedInstitution = null;
@@ -283,11 +291,18 @@ async function applySession(session) {
   const revision = ++sessionRevision;
   currentSession = session;
   currentProfile = null;
+  $('#pending-kicker').textContent = 'ACESSO EM ANÁLISE';
+  $('#pending-icon').textContent = '⌛';
+  $('#pending-intro').textContent = 'Um administrador global da plataforma ClariACE precisa vincular seu usuário a uma instituição antes de liberar a calculadora.';
   signOutButton.hidden = !session;
   sessionName.hidden = !session;
   if (!session) {
     passwordRecoveryMode = false;
     passwordRecoveryComplete = false;
+    operatorProtocols = [];
+    selectedOperatorProtocol = null;
+    protocolRequiresChannelSelection = false;
+    protocolLoadState = 'idle';
     showOnly('auth');
     sessionName.textContent = '';
     setStatus(authStatus, '');
@@ -351,12 +366,23 @@ async function applySession(session) {
 
   const isAdmin = profile.role === 'admin';
   if (!isAdmin) {
-    const optionsLoaded = await loadCalculatorOptions();
+    const optionsLoaded = await loadOperatorProtocolContext();
     if (revision !== sessionRevision) return;
     if (!optionsLoaded) {
       showOnly('pending');
-      $('#pending-title').textContent = 'Não foi possível carregar os exames';
-      $('#pending-details').textContent = 'Atualize a página. Se o problema continuar, fale com o administrador da plataforma ClariACE.';
+      const states = {
+        error: ['Não foi possível carregar o protocolo', 'Atualize a página. Se o problema continuar, peça ao administrador da plataforma ClariACE para verificar a conexão e a configuração do protocolo.'],
+        missing: ['Protocolo da unidade não ativado', 'Peça ao administrador da plataforma ClariACE para revisar e ativar o protocolo desta unidade. A calculadora só abre quando houver regras ativas.'],
+        multiple: ['Configuração de tomógrafo pendente', 'Há mais de um protocolo ativo para esta unidade. A seleção entre 16 e 64 canais é liberada somente para o CRD; peça ao administrador para revisar os protocolos.'],
+        invalid: ['Protocolo sem regras válidas', 'Peça ao administrador da plataforma ClariACE para conferir a concentração e os exames do protocolo ativo.'],
+        idle: ['Protocolo da unidade indisponível', 'Peça ao administrador da plataforma ClariACE para revisar a configuração do protocolo.']
+      };
+      const [title, details] = states[protocolLoadState] || states.idle;
+      $('#pending-kicker').textContent = 'CONFIGURAÇÃO DA UNIDADE';
+      $('#pending-icon').textContent = '!';
+      $('#pending-intro').textContent = 'Seu acesso está ativo, mas a calculadora precisa de um protocolo institucional válido para exibir exames e parâmetros corretos.';
+      $('#pending-title').textContent = title;
+      $('#pending-details').textContent = details;
       return;
     }
   }
@@ -409,24 +435,78 @@ $('#show-dashboard').addEventListener('click', () => {
 });
 
 function optionsForCurrentParameters() {
-  return calculatorOptions.filter(option =>
-    Number(option.concentration) === Number(concentration.value)
-    && Number(option.channels) === Number(channels.value)
-    && Boolean(option.injector) === (injector.value === 'com')
-  );
+  return selectedOperatorProtocol?.exam_keys || [];
 }
 
-async function loadCalculatorOptions() {
-  const { data, error } = await supabase.rpc('list_calculator_options');
+function setOperatorProtocol(protocol) {
+  selectedOperatorProtocol = protocol || null;
+  concentration.value = protocol ? String(protocol.concentration) : '';
+  channels.value = protocol ? String(protocol.channels) : '';
+  updateExams();
+}
+
+async function loadOperatorProtocolContext() {
+  protocolLoadState = 'loading';
+  operatorProtocols = [];
+  selectedOperatorProtocol = null;
+  protocolRequiresChannelSelection = false;
+  protocolChannelField.hidden = true;
+  protocolChannel.replaceChildren(new Option('Selecione o tomógrafo', ''));
+  concentration.value = '';
+  channels.value = '';
+  updateExams();
+
+  const { data, error } = await supabase.rpc('operator_active_protocol_context');
   if (error || !Array.isArray(data)) {
-    calculatorOptions = [];
+    protocolLoadState = 'error';
     updateExams();
     return false;
   }
-  calculatorOptions = data;
-  updateExams();
-  if (optionExists(exam, savedExamPreference)) exam.value = savedExamPreference;
-  savedExamPreference = '';
+  operatorProtocols = data.map(protocol => ({
+    ...protocol,
+    concentration: Number(protocol.concentration),
+    channels: Number(protocol.channels),
+    rule_count: Number(protocol.rule_count),
+    exam_keys: Array.isArray(protocol.exam_keys) ? protocol.exam_keys : []
+  }));
+  if (!operatorProtocols.length) {
+    protocolLoadState = 'missing';
+    return false;
+  }
+  const protocolsAreValid = operatorProtocols.every(protocol =>
+    protocol.concentration === 370
+    && Number.isInteger(protocol.channels)
+    && protocol.rule_count > 0
+    && protocol.exam_keys.length > 0
+    && protocol.exam_keys.every(key => typeof key === 'string' && key.trim())
+  );
+  if (!protocolsAreValid) {
+    protocolLoadState = 'invalid';
+    return false;
+  }
+
+  if (operatorProtocols.length === 1) {
+    protocolLoadState = 'ready';
+    setOperatorProtocol(operatorProtocols[0]);
+    return true;
+  }
+
+  const crdProtocols = operatorProtocols.length === 2
+    && operatorProtocols.every(protocol => normalizeText(protocol.institution_name) === 'crd medicina diagnostica')
+    && operatorProtocols.map(protocol => protocol.channels).sort((a, b) => a - b).join(',') === '16,64'
+    && new Set(operatorProtocols.map(protocol => protocol.concentration)).size === 1;
+  if (!crdProtocols) {
+    protocolLoadState = 'multiple';
+    return false;
+  }
+
+  protocolLoadState = 'ready';
+  protocolRequiresChannelSelection = true;
+  protocolChannelField.hidden = false;
+  operatorProtocols.slice().sort((a, b) => a.channels - b.channels).forEach(protocol => {
+    protocolChannel.add(new Option(`${protocol.channels} canais`, String(protocol.channels)));
+  });
+  setOperatorProtocol(null);
   return true;
 }
 
@@ -436,10 +516,8 @@ function optionExists(select, value) {
 
 function savePreferences() {
   const preferences = {
-    concentration: concentration.value,
-    channels: channels.value,
-    injector: injector.value,
-    exam: exam.value
+    injector: injector.value || savedInjectorPreference,
+    exam: exam.value || savedExamPreference
   };
   try {
     if (Object.values(preferences).some(Boolean)) localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
@@ -461,14 +539,18 @@ function clearSavedPreferences(message) {
 
 function updateExams() {
   const previous = exam.value;
-  const options = optionsForCurrentParameters();
-  const hasParameters = Boolean(concentration.value && channels.value && injector.value);
+  const options = selectedOperatorProtocol ? optionsForCurrentParameters() : [];
+  const preferredExam = options.includes(previous)
+    ? previous
+    : options.includes(savedExamPreference) ? savedExamPreference : '';
   exam.replaceChildren(new Option(
-    hasParameters ? (options.length ? 'Selecione o exame' : 'Sem exames para esta combinação') : 'Selecione os parâmetros anteriores',
+    selectedOperatorProtocol ? (options.length ? 'Selecione o exame' : 'Sem exames neste protocolo') : 'Selecione o tomógrafo primeiro',
     ''
   ));
-  [...new Set(options.map(option => option.exam_key))].forEach(name => exam.add(new Option(displayName(name), name)));
-  if ([...exam.options].some(option => option.value === previous)) exam.value = previous;
+  options.forEach(name => exam.add(new Option(displayName(name), name)));
+  if (preferredExam) exam.value = preferredExam;
+  if (preferredExam === savedExamPreference) savedExamPreference = '';
+  exam.disabled = options.length === 0;
   renderEmptyResult();
   formError.textContent = '';
 }
@@ -482,10 +564,13 @@ function renderEmptyResult() {
   result.replaceChildren(empty);
 }
 
-[concentration, channels, injector].forEach(control => control.addEventListener('change', () => {
-  updateExams();
+protocolChannel.addEventListener('change', () => {
+  const protocol = operatorProtocols.find(item => String(item.channels) === protocolChannel.value);
+  setOperatorProtocol(protocol || null);
+});
+injector.addEventListener('change', () => {
   savePreferences();
-}));
+});
 [exam, weight, patientId].forEach(control => control.addEventListener('input', () => {
   renderEmptyResult();
   formError.textContent = '';
@@ -496,13 +581,20 @@ exam.addEventListener('change', () => {
 });
 clearPreferencesButton.addEventListener('click', () => {
   savedExamPreference = '';
+  savedInjectorPreference = '';
   clearSavedPreferences('Preferências apagadas. As escolhas atuais continuam nesta página.');
 });
 calculatorForm.addEventListener('reset', () => {
   setTimeout(() => {
-    updateExams();
+    if (protocolRequiresChannelSelection) {
+      protocolChannel.value = '';
+      setOperatorProtocol(null);
+    } else if (operatorProtocols.length === 1) {
+      setOperatorProtocol(operatorProtocols[0]);
+    }
     renderEmptyResult();
     savedExamPreference = '';
+    savedInjectorPreference = '';
     clearSavedPreferences('Campos limpos e preferências apagadas deste navegador.');
   }, 0);
 });
@@ -516,10 +608,18 @@ function restorePreferences() {
   } catch {
     preferencesStatus.textContent = 'Não foi possível ler as preferências salvas neste navegador.';
   }
-  concentration.value = optionExists(concentration, preferences.concentration) ? preferences.concentration : '';
-  channels.value = optionExists(channels, preferences.channels) ? preferences.channels : '';
-  injector.value = optionExists(injector, preferences.injector) ? preferences.injector : '';
+  savedInjectorPreference = typeof preferences.injector === 'string' ? preferences.injector : '';
   savedExamPreference = typeof preferences.exam === 'string' ? preferences.exam : '';
+  if (savedInjectorPreference === 'com' || savedInjectorPreference === 'sem') injector.value = savedInjectorPreference;
+  try {
+    const cleanPreferences = {};
+    if (savedInjectorPreference) cleanPreferences.injector = savedInjectorPreference;
+    if (savedExamPreference) cleanPreferences.exam = savedExamPreference;
+    if (Object.keys(cleanPreferences).length) localStorage.setItem(PREFERENCES_KEY, JSON.stringify(cleanPreferences));
+    else localStorage.removeItem(PREFERENCES_KEY);
+  } catch {
+    preferencesStatus.textContent = 'Não foi possível atualizar as preferências salvas neste navegador.';
+  }
   updateExams();
   weight.value = '';
   patientId.value = '';
@@ -537,15 +637,18 @@ function renderServerResult(data, weightKg) {
   result.replaceChildren();
   if (data.outcome === 'not_defined') {
     const message = element('div', 'result-message');
-    message.append(element('h3', '', 'Valor não definido na tabela'));
-    message.append(element('p', '', 'A tabela não informa um volume para este peso e exame. Consulte o protocolo e o profissional responsável.'));
+    message.append(element('h3', '', data.protocol_version ? 'Regra não encontrada neste protocolo' : 'Valor não definido na tabela'));
+    message.append(element('p', '', data.protocol_version
+      ? `O protocolo ${data.protocol_version} não tem uma regra para este exame e peso. Consulte o administrador da unidade antes de prosseguir.`
+      : 'A tabela disponível não informa um volume para este peso e exame. Consulte o administrador da unidade antes de prosseguir.'));
     result.append(message);
     return;
   }
   if (data.outcome === 'limit_exceeded') {
     const message = element('div', 'result-message');
-    message.append(element('h3', '', 'Limite da tabela excedido'));
-    message.append(element('p', '', `O cálculo de ${fmt(data.volume_ml)} mL ultrapassa o limite de ${fmt(data.limit_ml)} mL informado na tabela. Consulte o protocolo e o profissional responsável antes de prosseguir.`));
+    message.append(element('h3', '', data.protocol_version ? 'Limite do protocolo excedido' : 'Limite da tabela excedido'));
+    const sourceName = data.protocol_version ? `do protocolo ${data.protocol_version}` : 'da tabela';
+    message.append(element('p', '', `O cálculo de ${fmt(data.volume_ml)} mL ultrapassa o limite de ${fmt(data.limit_ml)} mL informado ${sourceName}. Consulte o profissional responsável antes de prosseguir.`));
     result.append(message);
     return;
   }
@@ -568,7 +671,7 @@ function renderServerResult(data, weightKg) {
 
   if (data.jelco_reference && Object.keys(data.jelco_reference).length) {
     const jelco = element('div', 'jelco');
-    jelco.append(element('strong', '', 'Jelco · fluxo máximo na tabela'));
+    jelco.append(element('strong', '', 'Jelco · referências de fluxo'));
     const list = element('div', 'jelco-list');
     Object.entries(data.jelco_reference).sort((a, b) => Number(a[0]) - Number(b[0])).forEach(([gauge, flow]) => {
       list.append(element('span', '', `${gauge}: até ${fmt(flow)} mL/seg`));
@@ -578,15 +681,15 @@ function renderServerResult(data, weightKg) {
   }
 
   const protocolLabel = data.protocol_version ? ` · protocolo ${data.protocol_version}` : '';
-  answer.append(element('p', 'source', `Fonte: concentração ${concentration.value} · ${data.source_sheet} · célula ${data.source_cell}${protocolLabel}${injector.value === 'com' ? ' · referência de Jelco da tabela' : ''}`));
+  const jelcoLabel = data.jelco_reference && Object.keys(data.jelco_reference).length ? ' · referência de Jelco' : '';
+  answer.append(element('p', 'source', `Fonte: concentração ${concentration.value} · ${data.source_sheet} · célula ${data.source_cell}${protocolLabel}${jelcoLabel}`));
   if (data.notes?.length) {
     const notes = element('div', 'notes');
-    notes.append(element('strong', '', 'Observações da tabela'));
+    notes.append(element('strong', '', 'Observações da regra'));
     data.notes.forEach(note => notes.append(element('p', '', note)));
     notes.append(element('p', '', 'Confira a aplicação desses limites antes de usar o resultado.'));
     answer.append(notes);
   }
-  if (injector.value === 'com') answer.append(element('p', 'height-note', 'A tabela registra altura de 1,80 m; confirme sua aplicação ao caso.'));
   result.append(answer);
 }
 
@@ -598,20 +701,27 @@ calculatorForm.addEventListener('submit', async event => {
     formError.textContent = 'Entre com uma conta ativa para registrar o cálculo.';
     return;
   }
-  for (const control of [concentration, channels, injector]) {
-    if (!control.value) {
-      formError.textContent = 'Selecione todos os parâmetros do exame.';
-      control.focus();
-      return;
-    }
+  if (protocolRequiresChannelSelection && !protocolChannel.value) {
+    formError.textContent = 'Selecione o tomógrafo usado neste exame.';
+    protocolChannel.focus();
+    return;
   }
-  const availableExams = optionsForCurrentParameters();
-  if (!availableExams.length) {
-    formError.textContent = 'Não há exames disponíveis para essa combinação de parâmetros.';
+  if (!selectedOperatorProtocol || !concentration.value || !channels.value) {
+    formError.textContent = 'Não há um protocolo ativo para esta unidade. Peça ao administrador para revisar a configuração.';
+    return;
+  }
+  if (!injector.value) {
+    formError.textContent = 'Informe se o exame será realizado com ou sem injetora.';
     injector.focus();
     return;
   }
-  if (!availableExams.some(option => option.exam_key === exam.value)) {
+  const availableExams = optionsForCurrentParameters();
+  if (!availableExams.length) {
+    formError.textContent = 'Não há exames cadastrados neste protocolo. Peça ao administrador para revisar as regras.';
+    exam.focus();
+    return;
+  }
+  if (!availableExams.includes(exam.value)) {
     formError.textContent = 'Selecione o tipo de exame.';
     exam.focus();
     return;

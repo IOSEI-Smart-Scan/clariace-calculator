@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07384a">
   <meta name="description" content="Calculadora ClariACE de volume de contraste, com registro seguro de uso por instituição e operador.">
   <title>Calculadora de contraste | ClariACE</title>
-  <link rel="stylesheet" href="style.css?v=20261117-admin-search-2">
+  <link rel="stylesheet" href="style.css?v=20261118-tech-cleanup-1">
 </head>
 <body>
   <header class="header">
@@ -59,10 +59,10 @@
     </section>
 
     <section id="pending-screen" class="pending-card card" aria-labelledby="pending-title" hidden>
-      <div class="pending-icon" aria-hidden="true">⌛</div>
-      <span class="section-kicker">ACESSO EM ANÁLISE</span>
+      <div id="pending-icon" class="pending-icon" aria-hidden="true">⌛</div>
+      <span id="pending-kicker" class="section-kicker">ACESSO EM ANÁLISE</span>
       <h2 id="pending-title">Sua conta aguarda aprovação</h2>
-      <p class="muted">Um administrador global da plataforma ClariACE precisa vincular seu usuário a uma instituição antes de liberar a calculadora.</p>
+      <p id="pending-intro" class="muted">Um administrador global da plataforma ClariACE precisa vincular seu usuário a uma instituição antes de liberar a calculadora.</p>
       <p id="pending-details" class="pending-details"></p>
     </section>
 
@@ -92,22 +92,21 @@
         <div class="workspace">
           <section class="card form-card" aria-labelledby="form-title">
             <div class="card-heading">
-              <div><span class="section-kicker">01 / PARÂMETROS</span><h2 id="form-title">Dados do exame</h2><p>Preencha as informações para consultar a tabela.</p></div>
+              <div><span class="section-kicker">01 / PARÂMETROS</span><h2 id="form-title">Dados do exame</h2><p>Informe os dados do exame para consultar o volume.</p></div>
               <span class="heading-icon" aria-hidden="true">＋</span>
             </div>
             <form id="calculator" novalidate>
               <div class="field"><label for="patient-id">ID do paciente</label><input id="patient-id" name="patient-id" type="text" maxlength="80" autocomplete="off" required aria-describedby="patient-id-hint"><p class="hint" id="patient-id-hint">O ID fica vinculado ao cálculo por 60 dias. Não informe nome, CPF ou prontuário.</p></div>
-              <div class="field"><label for="concentration">Concentração do contraste</label><div class="select-wrap"><select id="concentration" required><option value="">Selecione a concentração</option><option value="300">300</option><option value="350">350</option><option value="370">370</option></select></div></div>
-              <div class="field-row">
-                <div class="field"><label for="channels">Canais do tomógrafo</label><div class="select-wrap"><select id="channels" required><option value="">Selecione</option><option>8</option><option>16</option><option>32</option><option>64</option><option>80</option><option>128</option><option>160</option></select></div></div>
-                <div class="field"><label for="injector">Uso de injetora</label><div class="select-wrap"><select id="injector" required><option value="">Selecione</option><option value="com">Com injetora</option><option value="sem">Sem injetora</option></select></div></div>
-              </div>
+              <div id="protocol-channel-field" class="field protocol-channel-field" hidden><label for="protocol-channel">Tomógrafo usado neste exame</label><div class="select-wrap"><select id="protocol-channel"><option value="">Selecione o tomógrafo</option></select></div><p class="hint">Esta unidade tem mais de um tomógrafo configurado. Escolha o equipamento deste exame.</p></div>
               <div class="field"><label for="exam">Tipo de exame</label><div class="select-wrap"><select id="exam" required><option value="">Selecione os parâmetros anteriores</option></select></div></div>
               <div class="field"><label for="weight">Peso do paciente</label><div class="input-wrap"><input id="weight" name="weight" type="text" inputmode="decimal" placeholder="Ex.: 70,5" required autocomplete="off" aria-describedby="weight-hint"><span>kg</span></div><p class="hint" id="weight-hint">Informe o peso em quilogramas.</p></div>
+              <div class="field"><label for="injector">Uso de injetora</label><div class="select-wrap"><select id="injector" required><option value="">Selecione</option><option value="com">Com injetora</option><option value="sem">Sem injetora</option></select></div></div>
+              <input id="concentration" type="hidden" value="">
+              <input id="channels" type="hidden" value="">
               <p id="form-error" class="error" role="alert"></p>
               <button id="calculate-button" class="primary" type="submit">Calcular volume <span aria-hidden="true">→</span></button>
               <button class="reset" type="reset">Limpar dados</button>
-              <div class="preferences"><p>Concentração, canais, injetora e exame ficam salvos neste navegador. Peso e ID do paciente não são salvos localmente.</p><button id="clear-preferences" class="clear-preferences" type="button">Apagar preferências salvas</button><p id="preferences-status" class="preferences-status" role="status" aria-live="polite"></p></div>
+              <div class="preferences"><p>Exame e injetora podem ficar salvos neste navegador. O tomógrafo é escolhido em cada cálculo quando a unidade tiver mais de um. Peso e ID do paciente não são salvos localmente.</p><button id="clear-preferences" class="clear-preferences" type="button">Apagar preferências salvas</button><p id="preferences-status" class="preferences-status" role="status" aria-live="polite"></p></div>
             </form>
           </section>
 
@@ -268,7 +267,7 @@
     <div class="source-note"><span aria-hidden="true">✳</span><p>Resultado calculado a partir das tabelas ClariACE aprovadas e registrado para auditoria. A calculadora apoia a prática clínica; confira o protocolo e a orientação do profissional responsável.</p></div>
   </main>
   <footer><div class="footer-inner"><span>ClariACE <b> / </b> Calculadora de contraste</span><span>Apoio à prática clínica</span></div></footer>
-  <script type="module" src="app.js?v=20261117-admin-search-2"></script>
+  <script type="module" src="app.js?v=20261118-tech-cleanup-1"></script>
 </body>
 </html>
 
